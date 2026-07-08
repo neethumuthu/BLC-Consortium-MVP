@@ -1,0 +1,38 @@
+# docker/peer-base.yaml — hand-written, static defaults shared by every
+# peer container, regardless of organization. blcgen embeds this file's
+# content verbatim into the generated docker-compose-net.yaml so its
+# anchors resolve in the same YAML document as the per-peer service
+# blocks that merge them in via `<<: *peer-base` / `<<: *peer-env`.
+#
+# Deliberately contains no config-driven values (image tag, ports, org
+# names, MSP/TLS paths) — those come from network.yaml/deployment/
+# local.yaml and are set per-service in the generated file. This file
+# only holds settings that are identical for every peer, in every org,
+# always.
+#
+# environment is its own anchor, separate from x-peer-base, because
+# YAML merge keys (<<:) do not merge the VALUE of a key that exists in
+# both the base and the overriding mapping — the override replaces it
+# wholesale. Nesting `<<: *peer-env` inside each service's own
+# `environment:` mapping merges correctly, since there environment is
+# the mapping being merged into, not a colliding sibling key of the
+# service itself.
+
+x-peer-env: &peer-env
+  FABRIC_LOGGING_SPEC: INFO
+  CORE_PEER_TLS_ENABLED: "true"
+  CORE_PEER_TLS_CERT_FILE: /etc/hyperledger/fabric/tls/signcerts/cert.pem
+  CORE_PEER_TLS_KEY_FILE: /etc/hyperledger/fabric/tls/key.pem
+  CORE_PEER_TLS_ROOTCERT_FILE: /etc/hyperledger/fabric/tls/ca.pem
+  CORE_PEER_GOSSIP_USELEADERELECTION: "true"
+  CORE_PEER_GOSSIP_ORGLEADER: "false"
+  CORE_LEDGER_STATE_STATEDATABASE: CouchDB
+  CORE_VM_ENDPOINT: unix:///host/var/run/docker.sock
+  CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE: blc
+
+x-peer-base: &peer-base
+  restart: unless-stopped
+  working_dir: /root
+  command: peer node start
+  networks:
+    - blc

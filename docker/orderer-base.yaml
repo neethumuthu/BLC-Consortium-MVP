@@ -1,0 +1,42 @@
+# docker/orderer-base.yaml — hand-written, static defaults shared by
+# every orderer container. blcgen embeds this file's content verbatim
+# into the generated docker-compose-net.yaml so its anchors resolve in
+# the same YAML document as the per-node service blocks that merge them
+# in via `<<: *orderer-base` / `<<: *orderer-env`.
+#
+# Deliberately contains no config-driven values (image tag, ports, MSP/
+# TLS paths) — those come from network.yaml/deployment/local.yaml and
+# are set per-service in the generated file. This file only holds
+# settings that are identical for every orderer node, always.
+#
+# environment is its own anchor, separate from x-orderer-base, because
+# YAML merge keys (<<:) do not merge the VALUE of a key that exists in
+# both the base and the overriding mapping — the override replaces it
+# wholesale. Nesting `<<: *orderer-env` inside each service's own
+# `environment:` mapping merges correctly, since there environment is
+# the mapping being merged into, not a colliding sibling key of the
+# service itself.
+
+x-orderer-env: &orderer-env
+  FABRIC_LOGGING_SPEC: INFO
+  ORDERER_GENERAL_LISTENADDRESS: 0.0.0.0
+  ORDERER_GENERAL_TLS_ENABLED: "true"
+  ORDERER_GENERAL_TLS_PRIVATEKEY: /etc/hyperledger/fabric/tls/key.pem
+  ORDERER_GENERAL_TLS_CERTIFICATE: /etc/hyperledger/fabric/tls/signcerts/cert.pem
+  ORDERER_GENERAL_TLS_ROOTCAS: "[/etc/hyperledger/fabric/tls/ca.pem]"
+  ORDERER_GENERAL_BOOTSTRAPMETHOD: none
+  ORDERER_CHANNELPARTICIPATION_ENABLED: "true"
+  ORDERER_ADMIN_TLS_ENABLED: "true"
+  ORDERER_ADMIN_TLS_PRIVATEKEY: /etc/hyperledger/fabric/tls/key.pem
+  ORDERER_ADMIN_TLS_CERTIFICATE: /etc/hyperledger/fabric/tls/signcerts/cert.pem
+  ORDERER_ADMIN_TLS_ROOTCAS: "[/etc/hyperledger/fabric/tls/ca.pem]"
+  ORDERER_ADMIN_TLS_CLIENTAUTHREQUIRED: "true"
+  ORDERER_ADMIN_TLS_CLIENTROOTCAS: "[/etc/hyperledger/fabric/tls/ca.pem]"
+  ORDERER_METRICS_PROVIDER: disabled
+
+x-orderer-base: &orderer-base
+  restart: unless-stopped
+  working_dir: /root
+  command: orderer
+  networks:
+    - blc
