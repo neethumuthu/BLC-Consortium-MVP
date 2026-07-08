@@ -1,0 +1,51 @@
+{
+  "name": "blc-network-{{.OrgName}}",
+  "version": "1.0.0",
+  "client": {
+    "organization": "{{.OrgName}}"
+  },
+  "organizations": {
+    "{{.OrgName}}": {
+      "mspid": "{{.OrgMSP}}",
+      "peers": [
+{{range $i, $p := .Peers}}{{if $i}},
+{{end}}        "{{$p.Name}}"{{end}}
+      ],
+      "certificateAuthorities": ["ca.{{.OrgName}}"]
+    }
+  },
+  "peers": {
+{{range $i, $p := .Peers}}{{if $i}},
+{{end}}    "{{$p.Name}}": {
+      "url": "grpcs://{{$p.Host}}:{{$p.Port}}",
+      "tlsCACerts": {
+        "path": "{{$p.TLSCACertPath}}"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "{{$p.Host}}",
+        "hostnameOverride": "{{$p.Host}}"
+      }
+    }{{end}}
+  },
+  "certificateAuthorities": {
+    "ca.{{.OrgName}}": {
+      "url": "http://localhost:{{.CAPort}}",
+      "caName": "ca-{{.OrgName}}",
+      "httpOptions": {
+        "verify": false
+      }
+    }
+  },
+  "orderers": {
+{{range $i, $o := .Orderers}}{{if $i}},
+{{end}}    "{{$o.Name}}": {
+      "url": "grpcs://{{$o.Host}}:{{$o.Port}}",
+      "tlsCACerts": {
+        "path": "{{$o.TLSCACertPath}}"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "{{$o.Host}}"
+      }
+    }{{end}}
+  }
+}
