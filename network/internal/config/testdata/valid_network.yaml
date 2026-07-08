@@ -1,0 +1,27 @@
+channel:
+  name: blcchannel
+  capabilities:
+    channel: V2_0
+    orderer: V2_0
+    application: V2_5
+
+orderer:
+  type: raft
+  count: 3
+  name: BLCOrderer
+  msp: BLCOrdererMSP
+
+
+organizations:
+  - name: BLCFounder
+    msp: BLCFounderMSP
+    status: founding
+  - name: InstitutionA
+    msp: InstitutionAMSP
+    status: founding
+  - name: InstitutionB
+    msp: InstitutionBMSP
+    status: pending
+
+chaincode:
+  packaging: classic

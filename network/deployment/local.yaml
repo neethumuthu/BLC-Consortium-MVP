@@ -1,0 +1,40 @@
+fabric_version: 2.5.0
+ca_version: 1.5.15
+couchdb_admin_user: admin
+couchdb_admin_password: adminpw
+
+orderer:
+  ca_port: 6054
+  nodes:
+    - general_port: 7050
+      admin_port: 7053
+      operations_port: 9443
+    - general_port: 7060
+      admin_port: 7063
+      operations_port: 9453
+    - general_port: 7070
+      admin_port: 7073
+      operations_port: 9463
+
+organizations:
+  BLCFounder:
+    ca_port: 7054
+    peers:
+      - peer_port: 7051
+        couchdb_port: 5984
+      - peer_port: 7061
+        couchdb_port: 5994
+  InstitutionA:
+    ca_port: 8054
+    peers:
+      - peer_port: 9051
+        couchdb_port: 6984
+      - peer_port: 9061
+        couchdb_port: 6994
+  InstitutionB:
+    ca_port: 9054
+    peers:
+      - peer_port: 11051
+        couchdb_port: 7984
+      - peer_port: 11061
+        couchdb_port: 7994
