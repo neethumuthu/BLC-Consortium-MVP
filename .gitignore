@@ -1,3 +1,8 @@
 network/generated/
 network/crypto/
 network/channel-artifacts/
+
+# stray `go build ./...` output at a chaincode module's root — named
+# after its own directory, not a deliberate build artifact
+chaincode/institution-cc/institution-cc
+chaincode/certificate-cc/certificate-cc
