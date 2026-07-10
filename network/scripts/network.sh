@@ -245,6 +245,16 @@ cmd_down() {
 }
 
 cmd_wipe() {
+  # chaincode-as-a-service containers attach to the `blc` network via a
+  # plain `docker run --network blc` (see chaincode.sh) — invisible to
+  # docker compose, so they must detach BEFORE compose's own `down`
+  # tries to remove that network, or removal silently no-ops ("still in
+  # use") and the network survives the wipe. Order matters here, not
+  # just presence. See docs/BUILD_LOG.md's Phase 7 repeatability-check
+  # entry.
+  log "tearing down chaincode-as-a-service containers"
+  ./scripts/chaincode.sh teardown
+
   log "stopping and removing containers + volumes"
   [ -f "$NET_COMPOSE_FILE" ] && docker compose -f "$NET_COMPOSE_FILE" down -v
   [ -f "$CA_COMPOSE_FILE" ] && docker compose -f "$CA_COMPOSE_FILE" down -v
