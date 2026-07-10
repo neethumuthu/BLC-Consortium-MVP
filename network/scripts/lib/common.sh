@@ -36,6 +36,11 @@ GENESIS_BLOCK="${CHANNEL_ARTIFACTS_DIR}/genesis.pb"
 # testing silently broke peer channel join once already.
 PEERCFG_DIR="$(pwd)/peercfg"
 
+# CHAINCODE_ROOT_DIR is the repo-level chaincode/ directory (a sibling of
+# network/, not under it) — chaincode.sh resolves a chaincode's source
+# by name as "${CHAINCODE_ROOT_DIR}/<name>", never a hardcoded path.
+CHAINCODE_ROOT_DIR="$(cd .. && pwd)/chaincode"
+
 # log prefixes every message with the invoking script's own name (not
 # common.sh's), since $0 is unchanged by `source` — running
 # network.sh prints "[network] ...", running bootstrap-crypto.sh
@@ -52,6 +57,18 @@ log() {
 require_file() {
   local path="$1" hint="$2"
   if [ ! -f "$path" ]; then
+    echo "error: ${path} not found — ${hint}" >&2
+    exit 1
+  fi
+}
+
+# require_dir is require_file's directory counterpart — used by
+# chaincode.sh to fail closed if a chaincode name doesn't resolve to a
+# real source directory, instead of letting `peer lifecycle chaincode
+# package` fail with a less specific error.
+require_dir() {
+  local path="$1" hint="$2"
+  if [ ! -d "$path" ]; then
     echo "error: ${path} not found — ${hint}" >&2
     exit 1
   fi
