@@ -32,6 +32,73 @@ during implementation, not on new ideas — file those as follow-ups instead.
 > now since secrets management is explicitly a deployment-target concern,
 > not a network-topology one, and this MVP has no deployment target other
 > than local Compose yet.
+>
+> **Same local-dev-scope caveat applies (2026-07-09):** TLS on the
+> peer↔chaincode-server hop (the connection each peer makes to a
+> chaincode-as-a-service container, per the amendment below) is disabled
+> — `connection.json`'s `tls_required: false`, and each chaincode's
+> `ChaincodeServer.TLSProps.Disabled: true`. Acceptable for the same
+> reason as the CouchDB credentials above: everything runs on one
+> machine's Docker bridge network, with no external exposure. Must be
+> revisited (TLS material enrolled per org's chaincode service, same as
+> peers already have) before any deployment target other than local
+> Compose.
+
+> **Amendment (2026-07-09): chaincode packaging is `ccaas`, not
+> `classic`, sooner than planned.** Key decision #6 below ("MVP uses
+> classic; ccaas is the documented production migration path") assumed
+> classic packaging would work for the MVP, with ccaas deferred until
+> there was a real need. That need arrived immediately: Fabric 2.5.0's
+> bundled Docker client (used by the peer's own internal "classic"
+> golang builder, which builds a chaincode image via a nested
+> `/var/run/docker.sock` bind mount) is incompatible with this host's
+> Docker Engine version — confirmed by direct diagnosis, not assumed:
+> the daemon's own logs show no error at all when the peer's build
+> fails, and an isolation test proved a *modern* Docker client builds
+> fine against the same daemon via BuildKit, while Fabric's old client
+> cannot. This is a real, confirmed blocker, not a preference change.
+> `institution-cc` now runs as a `shim.ChaincodeServer`, built into its
+> own Docker image via a plain host-side `docker build` (bypassing the
+> peer's broken internal path entirely), one container per founding/
+> member org. `chaincode.sh` (Phase 7) implements this — see
+> `docs/BUILD_LOG.md`'s Phase 7 entry for the full diagnosis and the
+> verified sequence (adapted from Fabric's own
+> `fabric-samples/test-network/scripts/deployCCAAS.sh`). Applies to
+> `certificate-cc` (Phase 8) too, via the same script — there was never
+> a real "classic" option available on this host once the
+> incompatibility was confirmed.
+
+> **Scope note (2026-07-09):** the team's sprint-planning notes describe
+> "partnering institutions" — institutions that issue certificates under
+> their own name plus "official partner of [institution name]" branding,
+> with a separate question of whether a partner needs its own vetting —
+> as v1.01 (licensing) scope, one sprint after this MVP's v1.0.
+> **`certificate-cc`'s `Certificate` struct (Phase 8) has no
+> representation of this at all** — no partner/affiliation field, no
+> licensing relationship, no second-tier vetting. Noted explicitly so
+> nothing later assumes Phase 8's direct-issuance design already accounts
+> for partnership-branded certificates; it doesn't, and isn't scoped to
+> yet. See `docs/BUILD_LOG.md`'s Phase 8 entry for the rest of this
+> sprint-planning cross-check (also resolved the `RevokeCertificate`
+> scope question the same way).
+
+> **Scope note (2026-07-09, updated once `certificate-cc` existed to
+> name both chaincodes explicitly rather than "either chaincode"):
+> `org-add.sh` (Phase 9) must install **both `institution-cc` and
+> `certificate-cc`** for a newly-joining org, not just join it to the
+> channel.** Cross-chaincode calls — `certificate-cc`'s
+> `IssueCertificate` checking `institution-cc`'s ledger via
+> `InvokeChaincode`, see `docs/BUILD_LOG.md`'s Phase 8 entry — are
+> peer-local: Fabric requires the invoked chaincode installed on
+> whatever peer executes the invoking one. The Runtime pipeline
+> described above (fetch channel config → decode → inject MSP → collect
+> signatures → submit config-update → set anchor peer) has no
+> chaincode-installation step at all. A newly-joined org would be a
+> channel member unable to successfully call `certificate-cc` (needs
+> both installed) or even `institution-cc` alone (needs at least that
+> one) until this is addressed — noted now so Phase 9's design starts
+> from installing **both**, not one, instead of discovering the second
+> mid-implementation.
 
 ## Origin
 
