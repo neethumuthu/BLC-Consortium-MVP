@@ -1580,4 +1580,307 @@ chaincode — an automatic consequence of `ImplicitMetaPolicy` (verified
 against Fabric source during Phase 8's co-signing question), not a new
 decision requiring its own config change.
 
-Code not yet started.
+**Implementation: skeleton + stage 1 (fail-closed governance guard),
+live-verified both ways.** `org-add.sh` follows the same
+stage()/trap-on-error/`FAILED at stage N` conventions as
+`network.sh`/`chaincode.sh`, sourcing the shared `lib/common.sh`,
+`lib/crypto.sh`, `lib/orgs.sh`. `require_active_institution` queries
+`institution-cc`'s `GetInstitution` via an *existing* active org's peer
+(the org being added has none of its own yet) and refuses every later
+stage unless the response shows `status: active`.
+
+**A real bug found immediately, not a clean first pass.** The first
+version's `response=$(peer chaincode query ... 2>&1)` tripped `set -e`
+on the query's own expected nonzero exit (querying a not-yet-approved
+institution is *supposed* to fail) — aborting before the Python
+interpretation step that was meant to turn that into a specific,
+friendly message ever ran, and firing the generic `ERR` trap twice in
+the process. Fixed with a trailing `|| true` on that assignment,
+documented inline: the query's own exit code is expected to vary and is
+deliberately not what decides pass/fail here — the Python step
+downstream is.
+
+**A real, separate operational finding while testing the positive
+case, not part of `org-add.sh` itself.** Ran the actual governance flow
+live — `ProposeNewMember` (InstitutionBMSP, proposed by BLCFounder),
+then `CastVote` "yes" from both BLCFounder and InstitutionA, fired back
+to back with no gap. Both invokes reported `"Chaincode invoke
+successful"`, but a direct `GetProposal` query against committed state
+afterward showed `votesFor: 1`, `status: "open"` — one vote's commit
+had silently failed MVCC validation, exactly the same contention shape
+already tested for `CERT_COUNTER` in Phase 8, just not previously
+exercised for `CastVote`'s own shared proposal key under genuinely
+concurrent (not sequential) votes. The peer CLI's "invoke successful"
+only confirms endorsement/submission, never final commit validation —
+re-cast the losing vote (confirmed via `GetProposal`, not assumed) and
+the proposal correctly reached `status: "approved"`, `votesFor: 2`.
+**Operational conclusion, not a chaincode bug:** votes on the same
+proposal must be cast sequentially (each confirmed committed before the
+next), or a caller must verify the actual committed result rather than
+trust the invoke response — worth remembering for however the live
+demo actually drives the vote.
+
+**Not filed away as just an operational note — checked whether it
+exposed a real test gap, and it did.** Before moving on to Phase 2,
+confirmed precisely which of two very different explanations this was:
+Fabric's normal "loser must retry" MVCC behavior (already proven
+correct for `CERT_COUNTER`), or a genuine silent-data-loss bug in
+`CastVote` that had shipped through Phase 7 undetected. It's the
+former — but `institution-cc`'s own fake stub had no way to even
+*model* the distinction (no version tracking in `commit()` at all), and
+none of its 6 existing `CastVote` tests exercised true concurrent
+voting, only sequential. Ported `certificate-cc`'s proven
+MVCC-versioning model into `institution-cc`'s `mocks_test.go` and added
+`TestCastVote_ConcurrentVotes_OneWinsOneConflicts`, mirroring the live
+scenario exactly (including the exact-key-presence check on the losing
+vote, not just "the count is right"). Confirmed the new test can
+actually fail — temporarily reverted `commit()` to blind-overwrite,
+watched the test fail with a clear message, then restored the fix.
+26/26 tests pass (25 existing + 1 new). Full detail in both of
+`docs/ERROR_LOG.md`'s matching 2026-07-13 entries.
+
+**Verified, both directions:** `org-add.sh InstitutionB` against an
+unapproved InstitutionB fails closed with a specific message, no trap
+double-fire, `network.yaml` untouched. Against a genuinely
+committed-approved InstitutionB (confirmed via `GetProposal`, not the
+invoke response), stage 1 passes cleanly, exit 0.
+
+**Stage 2 implemented: crypto enrollment + container bring-up,
+live-verified.** Extracted `wait_for_port` from `network.sh` into
+`lib/common.sh` (same pure-code-motion pattern as the earlier
+`crypto.sh`/`orgs.sh` extractions) — `org-add.sh` needs the identical
+readiness check for a new org's own peers. `start_org_ca`/
+`start_org_couchdb`/`start_org_peer` assemble raw `docker run` commands
+matching `docker-compose-ca.yaml.tmpl`/`docker-compose-net.yaml.tmpl`'s
+per-service shape field-for-field, including `CORE_PEER_GOSSIP_
+BOOTSTRAP`'s exact algorithm — read directly from `blcgen`'s own
+`compose_data.go` (`BuildComposeData`) rather than reverse-engineered:
+each peer's bootstrap is every *other* peer in its own org,
+comma-joined. That function's own comment already anticipated this:
+*"a 'pending' org's containers are started later by org-add.sh's own
+compose fragment, never by this one."* `bring_up_org_containers` ties
+it together: start the CA, `wait_for_ca`, call `lib/crypto.sh`'s
+`bootstrap_org` (the exact function `bootstrap-crypto.sh` uses for
+every founding/member org, here for just the one new org), then
+CouchDB(s) and peer(s) in dependency order.
+
+**A real bug found immediately, live.** First run failed:
+`mkdir: cannot create directory '.../crypto/ca-servers/InstitutionB':
+Permission denied`. Root cause: `crypto/ca-servers/` is already
+root-owned (the CA process inside each container runs as root, and
+Docker auto-creates a missing bind-mount source directory as whatever
+UID the container writes as — same mechanism already documented in
+`docs/ERROR_LOG.md`'s 2026-07-06 root-owned-crypto entry) — a plain
+user-owned `mkdir -p` underneath an existing root-owned parent fails.
+Fix: removed the manual `mkdir` entirely; Docker already creates the
+directory correctly on first mount, exactly how `BLCFounder`'s/
+`InstitutionA`'s identical directories came to exist without any
+script ever creating them directly. Re-ran clean: `InstitutionB`'s CA,
+Admin, and both peers' crypto enrolled correctly, all 5 containers
+(`ca.InstitutionB`, 2×`couchdb.*.InstitutionB`, 2×`peer*.InstitutionB`)
+started and stayed up — confirmed not just "up" but genuinely healthy
+by reading `peer0.InstitutionB`'s own logs directly: it shows a
+successful `GossipStream` probe from `peer1.InstitutionB`, proving the
+`GossipBootstrap` computation is correct, not just plausible-looking.
+
+**Stages 3-4 implemented: two-step channel config-update, manually
+verified end-to-end before writing any script code, then confirmed via
+the actual script.** Before writing `inject_org_into_channel`/
+`set_anchor_peers`, ran the full sequence by hand against this live
+network first — `peer channel fetch config` → `configtxlator
+proto_decode` → merge via `jq` → `proto_encode` ×2 →
+`configtxlator compute_update` → decode → wrap in a config-update
+envelope → `peer channel signconfigtx` (per signer) → `peer channel
+update` — for both the org-injection update (signed by existing orgs)
+and the anchor-peer update (signed by InstitutionB's own admin,
+confirmed to work even though InstitutionB had not yet joined the
+channel as a peer — signing only needs a valid MSP identity, not
+channel membership). Two real findings from that manual pass, both
+folded into the actual functions:
+1. Application groups in the channel config are keyed by **org name**
+   ("InstitutionB"), not MSP ID ("InstitutionBMSP") — confirmed by
+   inspecting the live fetched config directly, not assumed from the
+   MSP-ID-keyed naming used everywhere else in this project.
+2. `configtxgen -printOrg`'s own INFO logs go to stdout by default —
+   same class of bug as `chaincode.sh`'s log-corrupting-captured-
+   output issue from Phase 7. My first manual attempt merged `2>&1`
+   myself and corrupted the captured JSON; the actual function only
+   captures stdout, with stderr going to `/dev/null` explicitly.
+
+`build_new_org_definition` generates a throwaway `configtx.yaml` (just
+one `Organizations` entry, pointing at the new org's already-enrolled
+`MSPDir` from stage 2) and calls `configtxgen -printOrg` against it —
+this produces the exact policy/MSP JSON shape Fabric expects, instead
+of hand-constructing `FabricMSPConfig` protobuf JSON by hand. Policy
+rules match the existing orgs' exact shape, read directly from the
+generated `configtx.yaml`, not reconstructed from memory: Readers
+`OR(admin,peer,client)`, Writers `OR(admin,client)`, Admins
+`OR(admin)`, Endorsement `OR(peer)`.
+
+**A real, recurring teardown gap found immediately while resetting for
+a clean test.** Wiping the network to test stages 3-4 via the actual
+script (not replay manually-committed state) hit the identical
+"`Network blc Resource is still in use`" symptom as the earlier
+chaincode-teardown incident — `org-add.sh`'s own CA/peer/CouchDB
+containers (stage 2) are started via plain `docker run`, invisible to
+`docker compose down`, same as the chaincode containers were. Worse in
+one respect: since `org-add.sh` can never touch `blcgen generate`, an
+onboarded org's containers can *never* migrate to compose management,
+even after stage 7 eventually flips its status to `member` — unlike
+the chaincode case, there's no future point where this resolves itself.
+Fixed with an `org-add.sh teardown` verb (enumerates every non-founding
+org in `network.yaml`, removes its containers) wired into `network.sh`'s
+`cmd_wipe` alongside the existing `chaincode.sh teardown` call. Full
+detail in `docs/ERROR_LOG.md`.
+
+**Verified via the actual script, from a genuinely clean state — not
+manual commands.** Fresh `network.sh down --wipe && up`, deployed
+`institution-cc`, registered both founders, proposed and voted
+InstitutionB (sequentially this time — see the earlier vote-race entry
+— reached `approved` on the first attempt, no retry needed), then ran
+`./org-add.sh InstitutionB` end-to-end: all 4 stages completed, exit 0.
+Independently confirmed by fetching the channel config fresh afterward
+(not trusting the script's own success message): `InstitutionB` present
+in `Application.groups`, `AnchorPeers` correctly set to both of its
+peers.
+
+Stages 5-7 (peer channel join, chaincode install+approve for both
+chaincodes, status flip) not yet implemented.
+
+**Stage 5 implemented — a real, wrong design assumption caught live,
+not just a bug in the code.** The original design (see this file's own
+stage-list comment before this fix) assumed a late-joining peer needed
+the channel's CURRENT config block, not the stale genesis block —
+reasoned but never tested. First live run refuted it outright: Fabric's
+own ledger-creation code rejects any block number other than 0 for a
+peer's first join (`cannot create ledger from genesis block: expected
+block number=0, received block number=N`). Corrected to join via
+`GENESIS_BLOCK` — the same constant `network.sh`'s own `join_peers`
+already uses for founding orgs — and removed the now-unneeded
+`fetch_newest_block` entirely. A peer joining via genesis catches up to
+the current state afterward through normal orderer block delivery,
+which already includes whatever config updates happened after genesis;
+it doesn't need those changes present in the block it joins with. Full
+diagnosis in `docs/ERROR_LOG.md`.
+
+**A second real failure, distinct from the first:** once the
+genesis-block fix was in, one retry hit a hard TLS handshake failure
+(`connection reset by peer`) joining `peer0.InstitutionB` — the same
+class of TCP-vs-TLS-readiness race already documented as benign
+elsewhere in this project, except this time it didn't self-heal (unlike
+`peer chaincode invoke`, `peer channel join` has no retry/backoff of
+its own). Fixed with a scoped 5-attempt retry loop around the join call
+in `join_new_org_to_channel`, not a change to the shared `wait_for_port`.
+
+**A real, costly mistake — my own — during recovery from the first
+failure.** Between test attempts, a "targeted cleanup" (`rm -rf
+crypto/ca-servers/InstitutionB` among other paths, intended only to
+clear an already-registered CA identity blocking a stage-2 retry)
+destroyed the CA's own root keypair, not just its registered-identity
+database. `InstitutionB`'s MSP definition — including that CA's root
+cert — had already been committed to the channel in stage 3, during
+the FIRST crypto generation. The recreated CA generated a different
+root key; every identity re-enrolled afterward was signed by an
+authority the channel's already-committed config had never heard of and
+had no way to learn about after the fact — including `InstitutionB`'s
+own admin identity, leaving no identity the channel would accept to
+correct it. Unrecoverable for that `InstitutionB` instance; required a
+full `network.sh down --wipe` and complete redo (institution-cc
+redeploy, founder registration, propose/vote, `org-add.sh` again, with
+no crypto deletion this time). Rule carried forward from this, not just
+a story about it: never manually delete inside `crypto/ca-servers/<org>`
+once that org's MSP is channel-committed — the only safe recovery past
+that point is a full wipe, never a partial one. Full detail in
+`docs/ERROR_LOG.md`.
+
+**Stage 5 verified live, twice, from two different clean rebuilds** —
+first through to a full 7-stage run, then again after the CA-root
+mistake forced a second rebuild. Both `peer0.InstitutionB` and
+`peer1.InstitutionB` independently confirmed via `peer channel getinfo`
+at matching heights and block hashes with the founding peers — not just
+trusting the script's own "Successfully submitted proposal to join
+channel" line.
+
+**Stage 6 implemented — extracted shared chaincode logic before writing
+new code, verified the extraction didn't break anything, then found a
+genuine cross-script design gap.** `package_and_install_for_org`,
+`approve_for_org`, `wait_for_ccaas_ready`, and `start_ccaas_container`
+were moved out of `chaincode.sh` into a new `scripts/lib/chaincode.sh`
+(pure code motion, same pattern as the earlier `crypto.sh`/`orgs.sh`
+extractions) — `org-add.sh` needed the same per-org packaging/install/
+approve/ccaas-start logic `chaincode.sh` already had, just never
+callable outside it. Verified with a real regression test: redeployed
+`institution-cc` through the refactored code, confirming the
+already-committed/recover-package-IDs/restart-ccaas path still worked
+correctly (it failed at the final `InitLedger` re-invoke, but for
+Fabric's own expected reason — "already initialized but called as
+init" — not a regression).
+
+**Real finding: deploying a chaincode after a pending org has already
+joined the channel blocks that chaincode's own commit.** Redeploying
+`certificate-cc` fresh (after `InstitutionB` had already completed
+stages 3-5 in this same rebuild) failed at `checkcommitreadiness`:
+`not enough approvals yet, missing: InstitutionBMSP` — despite
+`InstitutionB` never being asked to approve anything and its
+`network.yaml` status still reading `pending`. Root cause:
+`checkcommitreadiness`'s approvals map reflects every org currently in
+the channel's Application group, not just the `founding`/`member` orgs
+`chaincode.sh` iterates — Fabric's own view of channel membership and
+this project's `network.yaml` bookkeeping had diverged, and Fabric's
+view is what actually gates commits. This reframed stage 6's design:
+it cannot assume a chaincode is always already committed by the time a
+new org approves it; approval must happen unconditionally, since
+sometimes it's what an otherwise-stuck commit was waiting on. Unblocked
+by having `InstitutionB` install+approve `certificate-cc` manually
+first, then re-running the founding orgs' commit, which succeeded with
+all 3 orgs approved. What's confirmed vs. reasoned, precisely: this
+session observed the requirement with `InstitutionB`'s peers already
+joined; whether it appears immediately after stage 3 alone (before any
+peer or ccaas container exists) is architecturally plausible but not
+directly tested — see `docs/ERROR_LOG.md` for the full scope note.
+
+**Two more non-idempotency gaps found and fixed while re-testing stage
+6** — both are the second and third times this project has hit "safe to
+re-run" not actually being true. Stage 2 (`bring_up_org_containers`)
+failed on a legitimate resume with `Identity 'orgadmin' is already
+registered`; fixed with `org_crypto_exists`, checking whether the org's
+assembled MSP directory already exists before re-enrolling. Stage 5
+then failed the same way (`ledger [blcchannel] already exists with
+state [ACTIVE]`) on the very next resume; fixed with a per-peer
+`peer channel getinfo` check inside `join_new_org_to_channel`, skipping
+any peer that's already joined. Both mirror stage 3-4's existing
+`is_channel_member` guard: query real state, don't cache a flag.
+
+**Stage 7 implemented — the only stage that mutates `network.yaml`,
+deliberately last.** `flip_status_to_member` rewrites only the target
+org's `status: pending` line to `status: member`, via a targeted regex
+on the raw file text rather than a full `yaml.load`/`yaml.dump`
+round-trip — this file has no comments today, but a full round-trip
+through PyYAML's own dumper could still silently reorder keys or change
+formatting elsewhere; a scoped substitution changes nothing else by
+construction. Verified directly: `network.yaml` diffed byte-for-byte
+identical except the one status line, and a subsequent
+`./org-add.sh InstitutionB` correctly refused with `status ... is
+'member', not 'pending' — nothing to add`.
+
+**Full 7-stage pipeline verified live, end-to-end, from a genuinely
+clean network — confirmed, not assumed.** Fresh `network.sh down
+--wipe && up`, deployed `institution-cc` then `certificate-cc`,
+registered both founders, proposed and voted `InstitutionB` (approved
+2-for-2), then ran `./org-add.sh InstitutionB` through all 7 stages to
+completion in one clean pass with no manual intervention. Beyond the
+script's own success message: independently queried `institution-cc`'s
+`GetInstitution` for `InstitutionB` *through `InstitutionB`'s own
+peer/ccaas container* and got back the correct, real record
+(`status:"active"`) — proof its chaincode stack actually executes
+queries, not just that lifecycle commands returned success.
+
+**Phase 9 complete.** `org-add.sh` now takes a `pending` organization
+from zero to a fully participating consortium member — crypto, channel
+membership, chaincode access, and status — in one command, safely
+resumable at every stage. This closes the full 9-phase build: BLC-31 is
+a live, 3-institution, dual-chaincode Hyperledger Fabric consortium
+network with a governance-gated onboarding flow, generated by `blcgen`,
+bootstrapped by `network.sh`, and extended at runtime by `org-add.sh` —
+built and verified one command at a time. Full incident-level detail
+for every finding referenced above is in `docs/ERROR_LOG.md`.

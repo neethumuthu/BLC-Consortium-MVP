@@ -22,6 +22,436 @@ Entry format:
 
 ---
 
+## 2026-07-13 — org-add.sh stages 2 and 5 both proved non-idempotent when testing stage 6, fixed with real skip-if-already-done guards
+
+**Phase:** 9 — testing stage 6 (chaincode install+approve) required
+re-running `org-add.sh InstitutionB` against a network where stages 1-5
+had already succeeded once. First re-run failed at stage 2
+(`Identity 'orgadmin' is already registered`, the same non-idempotency
+already documented for `bootstrap_org`). After adding a stage-2 guard
+and re-running, stage 5 then failed the same way: `cannot create ledger
+from genesis block: ledger [blcchannel] already exists with state
+[ACTIVE]`.
+**Command / context:** `./org-add.sh InstitutionB`, re-run twice in a
+row to reach stage 6 without a full network wipe.
+**Root cause:** neither stage had ever been exercised on a genuine
+resume before — every earlier test either wiped the network first or
+failed before reaching a later stage. Both `fabric-ca-client register`
+and `peer channel join` reject their respective already-done state
+outright, with no built-in idempotency of their own.
+**Resolution:** added `org_crypto_exists(org_name)` (checks whether
+`crypto/organizations/<org>/msp` already exists) to skip stage 2's
+`bring_up_org_containers` entirely on a re-run, and added a per-peer
+`peer channel getinfo` check inside `join_new_org_to_channel` to skip
+any peer that's already joined, retrying only the ones that aren't.
+Both mirror the same "query real state, don't cache a flag" discipline
+as stage 3-4's existing `is_channel_member` guard.
+**Follow-up:** `org_crypto_exists` doesn't independently verify
+containers are actually running — if someone tears down containers
+(`org-add.sh teardown`) without deleting crypto, skipping stage 2 would
+leave them down. Accepted gap for now; fix it if it becomes a real
+problem, not preemptively.
+
+---
+
+## 2026-07-13 — deploying `certificate-cc` after `InstitutionB` already joined the channel config blocked commit: a pending org still counts as an Application-group approver
+
+**Phase:** 9 — designing stage 6 (install + approve both chaincodes for
+a new org). Discovered while deploying `certificate-cc` fresh on the
+rebuilt network, which by this point already had `InstitutionB`
+injected into the channel (stages 3-4 succeeded earlier in this same
+rebuild).
+**Symptom:** `chaincode.sh deploy certificate-cc` failed at stage 4
+(`checkcommitreadiness`) with `error: not enough approvals yet,
+missing: InstitutionBMSP` — even though `InstitutionB` was never asked
+to approve anything, and its `network.yaml` status is still `pending`.
+**Command / context:** `./scripts/chaincode.sh deploy certificate-cc`,
+run after `institution-cc` was already deployed and after `org-add.sh
+InstitutionB` had already completed stages 1-5 on this same fresh
+network.
+**Root cause:** `checkcommitreadiness`'s `approvals` map reflects every
+org **currently in the channel's Application group** — not just the
+`founding`/`member` orgs `chaincode.sh` iterates via `active_org_lines`.
+`org-add.sh`'s stage 3 already made `InstitutionB` a real Application
+group member (that's the whole point of the config-update), regardless
+of what `network.yaml`'s own status field still says. `institution-cc`
+never hit this because it was deployed *before* `InstitutionB` joined
+the channel in this rebuild; deploying a *second* chaincode *after* a
+pending org has already joined exposes the gap. This is a genuine
+cross-script ordering dependency between `org-add.sh` and
+`chaincode.sh` that hadn't been exercised before this test.
+**Resolution:** this reframes stage 6's own design: it cannot assume
+the chaincode is always already committed by the time a new org
+approves it. Stage 6 must install + approve for the new org
+unconditionally — sometimes that approval is what a stuck commit
+(like this one) was waiting on, sometimes it's just catching up to an
+already-committed definition. Immediate unblock for this test:
+`InstitutionB` installs + approves `certificate-cc` manually (the same
+action stage 6 will perform), then `checkcommitreadiness`/commit is
+re-run and succeeds with all 3 orgs approved.
+**Follow-up:** in normal operation, deploying every chaincode a
+consortium needs *before* onboarding new orgs avoids this entirely —
+this only surfaced because this test session deliberately deployed
+`certificate-cc` late. Worth a one-line callout in `org-add.sh`'s own
+header comment so a future reader isn't surprised by this ordering
+sensitivity.
+**Precise scope — what was actually confirmed vs. reasoned:** this
+session directly observed the requirement with `InstitutionB`'s peers
+already joined (stage 5 had already succeeded before `certificate-cc`
+was deployed). It was NOT directly tested whether the requirement
+appears immediately after stage 3 alone, before stage 4/5/6 have run —
+that's a reasoned inference from Fabric's architecture
+(`checkcommitreadiness` reads the channel's committed CONFIG state,
+which is a separate fact from a peer's runtime connectivity or gossip
+state), not a live-verified fact. If true, the real window is stage 3
+through stage 6 completing — not just "before this org is fully
+onboarded" — meaning a chaincode deploy attempted concurrently with, or
+during a stall inside, a running `org-add.sh` invocation would hit this
+same block even though the new org has no running peer or ccaas
+container yet to meaningfully approve with (only its stage-2 Admin
+identity, which is enough to sign an approval). Worth a live test of
+this exact narrow window if it ever becomes operationally relevant —
+not assumed true just because it's architecturally plausible.
+
+---
+
+## 2026-07-13 — my own "targeted cleanup" recovery step destroyed `InstitutionB`'s CA root identity, permanently orphaning its already-committed MSP definition
+
+**Phase:** 9 — second retry of `org-add.sh InstitutionB` stage 5, after
+the genesis-block fix and the retry-loop fix above, both already
+applied and confirmed working in isolation.
+**Symptom:** every one of `InstitutionB`'s peers was rejected by the
+orderer and by its own peers with `x509: certificate signed by unknown
+authority (possibly because of "x509: ECDSA verification failure" while
+trying to verify candidate authority certificate "fabric-ca-server")`,
+surfacing as `deliverBlocks -> ... not authorized: implicit policy
+evaluation failed - 0 sub-policies were satisfied` in the orderer's own
+log, and as `peer channel getinfo`'s identical Readers-policy failure
+when queried directly.
+**Command / context:** after the FIRST stage-5 failure (the genesis-
+block bug), I had the user run a "targeted cleanup" before retrying:
+`./org-add.sh teardown` followed by `docker run ... rm -rf
+/crypto/organizations/InstitutionB /crypto/ca-servers/InstitutionB
+/crypto/ca-bootstrap/InstitutionB`, intended only to clear the
+already-registered CA identities blocking a stage-2 retry (same
+non-idempotent `fabric-ca-client register` issue documented earlier for
+the founding orgs).
+**Root cause:** `fabric-ca-server` generates its own root CA keypair on
+first startup and persists it inside its own home directory
+(`crypto/ca-servers/<org>`) — this root cert is what got embedded in
+`InstitutionB`'s MSP definition when `inject_org_into_channel` (stage 3)
+committed it to the channel back in block 11, during the FIRST crypto
+generation. Deleting `crypto/ca-servers/InstitutionB` before the retry
+destroyed that CA's root keypair, not just its registered-identity
+database. The recreated CA container generated a brand-new, different
+root key, and every identity re-enrolled afterward (peer0, peer1,
+Admin) was signed by this new, different authority — one the channel's
+already-committed config has never heard of and has no way to learn
+about after the fact.
+**Resolution:** none possible for this `InstitutionB` instance —
+correcting its MSP definition in the channel config would itself need a
+config-update signed by `InstitutionB`'s own admin (each value's
+`mod_policy` in `build_new_org_definition`'s output resolves to that
+org's own Admins policy), but that identity is *also* signed by the
+now-untrusted new CA. There is no remaining identity the channel would
+accept to fix this. Required a full `network.sh down --wipe` and a
+complete redo (deploy `institution-cc`, register both founders,
+propose/vote `InstitutionB` again, then `org-add.sh InstitutionB` in
+one clean pass without any crypto deletion in between).
+**Follow-up:** **Rule to carry forward, not just a story about a
+mistake:** never manually delete anything inside
+`crypto/ca-servers/<org>/` (or any CA's own home directory) once that
+org's MSP has already been injected into the channel — the CA's root
+keypair lives there and is irreplaceable the moment channel config
+trusts it. The only safe recovery past that point is a full
+`network.sh down --wipe` and complete redo, never a partial/targeted
+crypto deletion, even when the deletion feels surgical and scoped to
+"just this one org." The generalizable mechanism: once stage 3 has
+committed an org's MSP definition to the channel, that org's CA root
+identity is permanently pinned into channel history from that point
+forward. Any future stage-2 retry after stage 3 has already run MUST
+preserve `crypto/ca-servers/<org>`'s CA root files — only its
+registered-identity database is the actual conflict blocking
+re-registration. `org-add.sh` has no code-level guard against this
+today (the mistake was in a manually-run recovery command, not in the
+script itself) — worth revisiting if a safer, scriptable recovery path
+for a stage-2-after-stage-3 failure is ever needed.
+
+---
+
+## 2026-07-13 — predicted follow-up from the transient-TLS-handshake entry actually happened: `peer0.InstitutionB`'s join hard-failed, not just a scary log line
+
+**Phase:** 9 — retry of `org-add.sh InstitutionB` stage 5, immediately
+after the genesis-block fix in the entry below this one.
+**Symptom:** `peer channel join` failed outright: `Client TLS handshake
+failed after 283.655µs with error: read tcp
+127.0.0.1:37706->127.0.0.1:11051: read: connection reset by peer`,
+followed by `Error: error getting endorser client for channel: ...
+failed to connect`. Unlike the earlier `peer0.BLCFounder` case (see this
+file's "transient ClientHandshake TLS EOF" entry), there was no
+successful retry within the same command — the join attempt failed
+outright and `org-add.sh` aborted.
+**Command / context:** `join_new_org_to_channel`'s `peer channel join -b
+"$GENESIS_BLOCK"` for `peer0.InstitutionB`, run immediately after
+`bring_up_org_containers` (via `wait_for_port`) had already confirmed
+the peer's port was accepting TCP connections.
+**Root cause:** exactly the follow-up condition the earlier entry
+anticipated: `wait_for_port`'s TCP-only readiness check isn't
+sufficient — the peer's TLS layer can still not be ready when the port
+already accepts connections. This time the race was hit hard enough
+that the join failed outright rather than silently recovering, because
+(unlike `peer chaincode invoke`, used for the governance-flow calls
+earlier this session) `peer channel join` has no retry/backoff
+machinery of its own — it's a one-shot call.
+**Resolution:** added a short retry loop (up to 5 attempts, 2-second
+gaps) around the `peer channel join` call inside
+`join_new_org_to_channel`. Safe to retry freely here: a peer that
+hasn't successfully joined yet has no "already joined" conflict to
+worry about. Deliberately not touching the shared `wait_for_port`
+itself — this fix is scoped to the one call site now confirmed to need
+it, not a broader change to code shared by every other readiness wait
+in this codebase.
+**Follow-up:** if this retry loop is ever exhausted (5 failures in a
+row for the same peer), that points to a real, non-transient problem
+(e.g. the peer container actually crashed), not this race — it would
+need its own fresh diagnosis, not a bigger retry count.
+
+---
+
+## 2026-07-13 — `org-add.sh` stage 5 joined peers against the wrong block — Fabric requires the genesis block, not the current config block
+
+**Phase:** 9 — first live, full end-to-end test of `org-add.sh`
+(stages 1-5) against `InstitutionB`, after a real governance vote
+(`RegisterInstitution` x2, `ProposeNewMember`, `CastVote` x2) actually
+approved it.
+**Symptom:** `peer channel join` failed for `peer0.InstitutionB` with
+`Error: proposal failed (err: bad proposal response 500: cannot create
+ledger from genesis block: expected block number=0, received block
+number=13)`. Stages 1-4 had already succeeded (crypto/containers up,
+MSP injected, anchor peers set).
+**Command / context:** `join_new_org_to_channel`'s `fetch_newest_block`
+fetched the channel's newest block (block 13, after the two config
+updates) and passed it to `peer channel join -b`, per this stage's
+original design (see this file's own header comment before this fix).
+**Root cause:** the original design assumption — "a late-joining peer
+needs the CURRENT config block, not the stale genesis block" — was
+never actually tested against real Fabric behavior until this run, and
+it was wrong. Fabric's own ledger-creation code refuses to bootstrap a
+peer's first-ever ledger for a channel from anything other than block
+0; there is no supported way to join starting partway through the
+chain. A late-joining peer is meant to join via the ORIGINAL genesis
+block and then catch up to the current state afterward through normal
+orderer block delivery — which already includes any config updates that
+happened after genesis, since the peer processes every block in
+sequence once joined.
+**Resolution:** rewrote `join_new_org_to_channel` to join using
+`GENESIS_BLOCK` (the same constant `network.sh`'s own `join_peers`
+already uses for founding orgs), and deleted `fetch_newest_block`
+entirely — it's no longer needed for anything. Updated this script's
+own module header comment, which had documented the wrong design as
+settled fact.
+**Follow-up:** none — confirmed directly against Fabric's own error
+message, not inferred.
+
+---
+
+## 2026-07-13 — transient `ClientHandshake` TLS EOF during `peer channel join`, self-resolved by retry
+
+**Phase:** 9 — first `network.sh up` run after a full wipe, to test
+`org-add.sh` stage 5 (peer channel join) cleanly from a genuinely clean
+network.
+**Symptom:** stage 9 (`join_peers`) logged `[comm.tls] ClientHandshake
+-> Client TLS handshake failed after 1.974411ms with error: EOF
+remoteaddress=127.0.0.1:7051` while joining `peer0.BLCFounder`,
+immediately followed by a successful join on the very next attempt.
+**Command / context:** `./network.sh up`, stage 9/10 (`joining
+peer0.BLCFounder to channel blcchannel`), right after stage 6's
+`wait_for_all_nodes` had already confirmed the peer's port was accepting
+connections.
+**Root cause:** `wait_for_port` (`lib/common.sh`) only proves a peer's
+TCP listener is accepting connections — it doesn't prove the peer
+process has finished registering its TLS credentials with its gRPC
+server. A container's OS-level socket can start accepting raw TCP
+connections slightly before the application layer has finished wiring
+up TLS, so the very first handshake attempt right after `wait_for_port`
+returns can land in that narrow window and get an EOF.
+**Resolution:** none needed — the `peer` CLI's underlying gRPC client
+retried automatically and succeeded about a second later
+(`executeJoin -> Successfully submitted proposal to join channel`), and
+stage 10 (`verify_channel_membership`) independently re-queried all 4
+peers afterward and confirmed every one reached `"height":1` with the
+matching block hash. Not fixing `wait_for_port` itself: this is a
+transient, self-recovering race, not a silent failure, matching this
+project's existing precedent (see `network.sh`'s own header comment on
+stages 3/8/9 not being made safely re-runnable) of deferring
+non-blocking robustness work until it's a real friction point, not
+preemptively.
+**Follow-up:** if this same handshake failure is ever seen WITHOUT a
+following successful retry (i.e., an actual join failure), that would
+mean `wait_for_port`'s TCP-only check is no longer sufficient and needs
+a real fix (e.g., a genuine TLS-level readiness probe) — not just
+logged as benign again without re-checking.
+
+---
+
+## 2026-07-13 — `network.sh down --wipe` left `org-add.sh`'s own containers behind (same class of bug as the chaincode-teardown gap)
+
+**Phase:** 9 — wiping the network to test `org-add.sh`'s stages 3-4
+cleanly from scratch, after manually verifying the channel
+config-update mechanism worked (InstitutionB was live-injected into the
+channel during that manual verification).
+**Symptom:** `network.sh down --wipe` logged `Network blc Resource is
+still in use` again, identical to the Phase 7 chaincode-teardown
+incident. `ca.InstitutionB`, both `peer{0,1}.InstitutionB`, and both
+`couchdb.peer{0,1}.InstitutionB` were still running afterward.
+**Command / context:** `./network.sh down --wipe`, run to reset before
+a clean end-to-end test of `org-add.sh`'s own stages.
+**Root cause:** exactly the same mechanism as the earlier chaincode
+container gap: `org-add.sh`'s `start_org_ca`/`start_org_peer`/
+`start_org_couchdb` (stage 2) use plain `docker run`, never
+docker-compose, so `docker compose down` can't see them. Worse than the
+chaincode case in one respect: `ARCHITECTURE.md` forbids `org-add.sh`
+from ever touching `blcgen generate`, so an onboarded org's containers
+can **never** become compose-managed, even after stage 7 flips its
+`network.yaml` status from `pending` to `member` — unlike the
+chaincode case, there's no future point at which this org's containers
+migrate to compose's management.
+**Resolution:** added an `org-add.sh teardown` verb — enumerates every
+org in `network.yaml` with `status != "founding"` (founding orgs are
+always compose-managed; anything else may have org-add-created
+containers, whether still `pending` or already `member`) and removes
+its `ca.*`/`peer*.*`/`couchdb.peer*.*` containers. Wired into
+`network.sh`'s `cmd_wipe`, called before either `docker compose down`,
+same ordering reasoning as the existing `chaincode.sh teardown` call.
+**Follow-up:** none — same fix shape as the chaincode-teardown entry,
+applied to the other class of raw-`docker run` container this project
+now has.
+
+---
+
+## 2026-07-13 — `org-add.sh`'s own `mkdir -p` for a CA's crypto dir failed with Permission denied
+
+**Phase:** 9 — `org-add.sh` stage 2 (crypto enrollment + container
+bring-up for InstitutionB), first live run.
+**Symptom:** `mkdir: cannot create directory '.../crypto/ca-servers/
+InstitutionB': Permission denied`.
+**Command / context:** `start_org_ca`'s own `mkdir -p
+"${CRYPTO_DIR}/ca-servers/${org_name}"`, added defensively before the
+`docker run` that mounts it, on the assumption the directory needed to
+exist first.
+**Root cause:** same mechanism as the 2026-07-06 "`rm -rf
+crypto/ca-servers` failed with Permission denied" entry above it in
+this log — `crypto/ca-servers/` itself is already root-owned (each CA
+container's `fabric-ca-server` process runs as root, and Docker's own
+bind-mount handling creates a missing source directory as whatever UID
+the container writes with). A normal-user `mkdir -p` underneath an
+already-root-owned parent directory fails. The assumption that the
+directory needed pre-creating was simply wrong: Docker creates missing
+bind-mount source directories itself on first mount, which is exactly
+how `crypto/ca-servers/BLCFounder`/`InstitutionA` came to exist in the
+first place, with no script ever `mkdir`-ing them.
+**Resolution:** removed the `mkdir -p` entirely; `docker run -v ...`
+handles directory creation on its own, matching the existing orgs'
+behavior exactly. Re-ran clean: `InstitutionB`'s CA and both peers'
+crypto enrolled correctly.
+**Follow-up:** none — this class of defensive-but-wrong `mkdir` is
+worth being suspicious of generally in this project, given
+`crypto/`'s root-owned nature; prefer letting Docker create bind-mount
+targets over pre-creating them by hand.
+
+---
+
+## 2026-07-13 — `peer chaincode invoke`'s "successful" only confirms endorsement/submission, never commit
+
+**Phase:** 9 (pre-work) — live-testing `org-add.sh`'s Phase 1 guard,
+which required actually running the governance vote for the first time
+outside a unit test.
+**Symptom:** cast "yes" votes from both `BLCFounderMSP` and
+`InstitutionAMSP` on the same `CastVote` proposal, back to back with no
+gap between them. Both invokes printed `"Chaincode invoke successful"`
+with `status:200`. A direct `GetProposal` query against committed state
+immediately after showed `votesFor: 1`, `status: "open"` — only one of
+the two votes had actually landed.
+**Command / context:** manual `peer chaincode invoke ... CastVote ...`
+calls, run consecutively while live-testing `org-add.sh`.
+**Root cause:** confirmed via `peer chaincode invoke --help`, not
+assumed: `--waitForEvent` — "Whether to wait for the event ...
+signifying that the 'invoke' transaction has been committed
+successfully" — is opt-in and was never used anywhere in this project.
+Without it, the CLI reports success once the transaction is endorsed
+and submitted to the orderer; the actual commit/validation (including
+MVCC read-conflict checking) happens asynchronously afterward and is
+never surfaced back to a plain invoke. Both `CastVote` calls
+independently simulated against the same pre-vote state and were both
+validly endorsed; one was later rejected at block-validation time
+(MVCC conflict on the shared proposal key) with no error visible to the
+caller.
+**Resolution:** not a chaincode bug — re-cast the losing vote as a
+fresh transaction; it correctly read the now-current committed state
+and landed cleanly (`votesFor: 2`, `status: "approved"`). This is the
+same "loser contributes nothing, retry succeeds" guarantee already
+proven for `certificate-cc`'s `CERT_COUNTER`, just observed through a
+client that doesn't surface per-transaction validation codes.
+**Follow-up:** general operational note for any future manual
+`peer chaincode invoke` testing in this project (not specific to
+`CastVote`): "invoke successful" is not "committed successfully."
+Verify real outcomes for anything contention-sensitive via a direct
+query against committed state afterward, not the invoke response —
+and either sequence genuinely concurrent-feeling calls with a
+confirm-then-proceed gap, or accept up front that a retry may be
+needed. See the following entry for the specific test-coverage gap
+this exposed in `institution-cc`.
+
+---
+
+## 2026-07-13 — `institution-cc`'s fake stub had no MVCC conflict modeling at all
+
+**Phase:** 9 (pre-work) — found immediately after the entry above,
+while confirming whether the vote race was Fabric behaving correctly
+or a real correctness bug in `CastVote`.
+**Symptom:** `institution-cc`'s `mocks_test.go` `fakeStub.commit()` was
+an unconditional `for k, v := range s.pending { s.ledger.committed[k] =
+v }` — no version tracking, no conflict detection whatsoever. Every one
+of the 6 existing `CastVote` tests (including the N=2/N=6 traces from
+Phase 7) modeled strictly *sequential* voting (`mustCommit` on each
+vote before the next one simulates); none modeled two votes racing
+against the same pre-commit proposal state. Had a regression test been
+written against this fake as-is, both concurrent commits would have
+blindly "succeeded," one silently overwriting the other — proving
+nothing, and masking exactly the class of issue found live in the
+entry above.
+**Command / context:** noticed while deciding whether the live vote
+race was benign (Fabric's normal MVCC behavior) or a genuine
+`institution-cc` bug — needed a way to actually prove which, not just
+assert it.
+**Root cause:** `institution-cc`'s test infrastructure predates
+`certificate-cc`'s Phase 8 concurrency work — its fake stub was never
+upgraded to model MVCC conflicts, unlike `certificate-cc`'s
+`mocks_test.go` (`fakeLedger.versions`, `fakeStub.readVersions`,
+`commit()` returning an error on conflict), because `institution-cc`
+never had a concurrency-sensitive counter analogous to `CERT_COUNTER`
+at the time it shipped — but `CastVote`'s own `VotesFor`/`VotesAgainst`
+read-modify-write on `MembershipProposal` has the identical shape and
+is subject to the identical contention.
+**Resolution:** ported `certificate-cc`'s exact MVCC-versioning model
+into `institution-cc`'s `mocks_test.go` (`fakeLedger.versions`,
+`fakeStub.readVersions`, `commit()` now returns an error), then added
+`TestCastVote_ConcurrentVotes_OneWinsOneConflicts`, mirroring the live
+scenario precisely: two `CastVote` calls simulate against the same
+base state, one commits, the other's commit is rejected, and — the
+stronger claim, not just "the vote count is right" — the losing vote's
+own `Vote` asset is confirmed entirely absent from committed state
+(exact-key-presence check, same rigor as `certificate-cc`'s own
+concurrency test). **Verified the test can actually fail, not just
+pass:** temporarily reverted `commit()` to the old unconditional-
+overwrite behavior, confirmed the new test fails with a clear
+assertion message, then restored the real fix and reconfirmed all 26
+tests (25 existing + 1 new) pass.
+**Follow-up:** none — the fix is a direct, verified port of an
+already-proven pattern, not a new design.
+
+---
+
 ## 2026-07-10 — `exec 3<>/dev/tcp/...` corrupts the calling shell's own stderr after a successful connection
 
 **Phase:** 9 (pre-work) — found while re-verifying `chaincode.sh` after
