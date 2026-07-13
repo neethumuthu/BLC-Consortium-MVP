@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -17,12 +18,28 @@ import (
 // transaction in a test. Each call to newTx gets its own fakeStub with an
 // isolated pending write set — mirroring how independent CastVote calls
 // in the real network are independent transactions against one ledger.
+//
+// versions tracks how many times each key has been committed — the basis
+// for this fake's MVCC conflict detection (see fakeStub.commit below).
+// Added after certificate-cc's Phase 8 concurrency test proved this
+// modeling necessary for CERT_COUNTER; CastVote's own VotesFor/
+// VotesAgainst counters on MembershipProposal have the identical
+// read-modify-write shape and are subject to the identical contention —
+// confirmed live during Phase 9 pre-work (two concurrent CastVote calls
+// on the same proposal, one silently lost its commit), see
+// docs/BUILD_LOG.md's Phase 9 entry.
 type fakeLedger struct {
 	committed map[string][]byte
+	versions  map[string]int
 }
 
 func newFakeLedger() *fakeLedger {
-	return &fakeLedger{committed: map[string][]byte{}}
+	return &fakeLedger{committed: map[string][]byte{}, versions: map[string]int{}}
+}
+
+func (l *fakeLedger) put(key string, value []byte) {
+	l.committed[key] = value
+	l.versions[key]++
 }
 
 // fakeStub implements shim.ChaincodeStubInterface by embedding the
@@ -30,8 +47,8 @@ func newFakeLedger() *fakeLedger {
 // calls. Any other method would panic on a nil interface if ever invoked —
 // acceptable, since the chaincode never calls them.
 //
-// Deliberately models two Fabric semantics precisely, not just
-// approximately, because tests below depend on both:
+// Deliberately models three Fabric semantics precisely, not just
+// approximately, because tests below depend on all three:
 //  1. GetState sees this transaction's own pending writes ("read your own
 //     writes"), matching real Fabric.
 //  2. GetQueryResult only ever scans committed state, NEVER this
@@ -40,17 +57,29 @@ func newFakeLedger() *fakeLedger {
 //     fake that didn't enforce this distinction would let a bug where
 //     approvingVoters is queried AFTER writing the current vote pass
 //     silently.
+//  3. MVCC read-write conflicts: GetState records the ledger's current
+//     version of each key it reads (readVersions, snapshotted on the
+//     FIRST read of that key in this transaction, not every read), and
+//     commit() refuses to apply this transaction's pending writes —
+//     returning an error instead — if any key it read has since been
+//     committed at a different version by another transaction. Mirrors
+//     real Fabric: a transaction is simulated against a snapshot, but
+//     validated against the ledger's actual state at commit time.
 type fakeStub struct {
 	shim.ChaincodeStubInterface
-	ledger      *fakeLedger
-	pending     map[string][]byte
-	txID        string
-	txTimestamp *timestamp.Timestamp
+	ledger       *fakeLedger
+	pending      map[string][]byte
+	readVersions map[string]int
+	txID         string
+	txTimestamp  *timestamp.Timestamp
 }
 
 func (s *fakeStub) GetState(key string) ([]byte, error) {
 	if v, ok := s.pending[key]; ok {
 		return v, nil
+	}
+	if _, already := s.readVersions[key]; !already {
+		s.readVersions[key] = s.ledger.versions[key]
 	}
 	return s.ledger.committed[key], nil
 }
@@ -169,12 +198,17 @@ func (f *fakeClientIdentity) GetMSPID() (string, error) {
 // transaction function returns no error — mirroring Fabric's all-or-
 // nothing commit semantics (see docs/BUILD_LOG.md's Phase 7 CastVote
 // entry): a transaction that returns an error must leave no trace on
-// the ledger.
+// the ledger. commit() itself can also fail (MVCC conflict) even when
+// the simulated function returned no error — real Fabric endorses two
+// concurrent transactions independently before either commits; the
+// conflict only surfaces at commit/validation time. Callers must check
+// commit()'s own returned error, not just the simulated function's.
 func newTx(ledger *fakeLedger, txID string, callerMSP string, ts time.Time) (contractapi.TransactionContextInterface, *fakeStub) {
 	stub := &fakeStub{
-		ledger:  ledger,
-		pending: map[string][]byte{},
-		txID:    txID,
+		ledger:       ledger,
+		pending:      map[string][]byte{},
+		readVersions: map[string]int{},
+		txID:         txID,
 		txTimestamp: &timestamp.Timestamp{
 			Seconds: ts.Unix(),
 			Nanos:   int32(ts.Nanosecond()),
@@ -186,20 +220,34 @@ func newTx(ledger *fakeLedger, txID string, callerMSP string, ts time.Time) (con
 	return ctx, stub
 }
 
-func (s *fakeStub) commit() {
-	for k, v := range s.pending {
-		s.ledger.committed[k] = v
+// commit applies this transaction's pending writes to the shared ledger,
+// but only after checking every key this transaction read is still at
+// the version it was when read — otherwise returns an MVCC-conflict-
+// shaped error and applies nothing, matching real Fabric commit-phase
+// validation.
+func (s *fakeStub) commit() error {
+	for key, seenVersion := range s.readVersions {
+		if s.ledger.versions[key] != seenVersion {
+			return fmt.Errorf("MVCC_READ_CONFLICT: key %q was modified by another transaction after this transaction read it", key)
+		}
 	}
+	for k, v := range s.pending {
+		s.ledger.put(k, v)
+	}
+	return nil
 }
 
 // mustCommit fails the test immediately if err is non-nil; otherwise
-// commits the transaction's pending writes to the shared ledger.
+// commits the transaction's pending writes to the shared ledger, and
+// fails the test if that commit itself is rejected (MVCC conflict).
 func mustCommit(t *testing.T, stub *fakeStub, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
-	stub.commit()
+	if commitErr := stub.commit(); commitErr != nil {
+		t.Fatalf("expected commit to succeed, got: %v", commitErr)
+	}
 }
 
 // mustFail fails the test if err is nil, and confirms nothing from this

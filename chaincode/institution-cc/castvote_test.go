@@ -264,3 +264,100 @@ func TestCastVote_DoubleVoteBySameInstitutionRejected(t *testing.T) {
 	_, err = contract.CastVote(secondVoteCtx, proposal6.ProposalID, voteDecisionNo)
 	mustFail(t, secondVoteStub, err)
 }
+
+// TestCastVote_ConcurrentVotes_OneWinsOneConflicts closes a real test
+// coverage gap found during Phase 9 pre-work, live: two institutions'
+// CastVote calls, fired back to back with no gap, both reported
+// "Chaincode invoke successful" from the peer CLI, but a direct
+// GetProposal query against committed state afterward showed only one
+// vote had actually landed. Root cause confirmed via
+// `peer chaincode invoke --help`: "successful" only means endorsement/
+// submission succeeded, never commit validation, unless --waitForEvent
+// is passed (never used anywhere in this project) — Fabric endorses
+// concurrent transactions independently before either commits, and the
+// conflict only surfaces at commit/validation time. Not a chaincode
+// bug — the losing transaction correctly contributed nothing, and
+// re-casting it correctly succeeded. But institution-cc's own fake
+// stub had no way to even model this until now (see mocks_test.go's
+// MVCC-versioning upgrade, ported from certificate-cc's own
+// Phase 8 concurrency test — CastVote's VotesFor/VotesAgainst
+// read-modify-write on MembershipProposal has the identical shape and
+// contention as CERT_COUNTER). See docs/BUILD_LOG.md's Phase 9 entry.
+func TestCastVote_ConcurrentVotes_OneWinsOneConflicts(t *testing.T) {
+	ledger := setupActiveFounders(t)
+	contract := &SmartContract{}
+
+	proposeCtx, proposeStub := newTx(ledger, "tx1", "InstitutionAMSP", time.Now())
+	proposal, err := contract.ProposeNewMember(proposeCtx, "InstitutionBMSP", "Institution B")
+	mustCommit(t, proposeStub, err)
+
+	// Both institutions cast "yes" votes concurrently — both simulate
+	// against the SAME pre-vote proposal state (votesFor: 0), exactly
+	// the live scenario above.
+	ctxA, stubA := newTx(ledger, "txA", "BLCFounderMSP", time.Now())
+	ctxB, stubB := newTx(ledger, "txB", "InstitutionAMSP", time.Now())
+
+	resolvedA, errA := contract.CastVote(ctxA, proposal.ProposalID, voteDecisionYes)
+	if errA != nil {
+		t.Fatalf("expected A's simulation to succeed, got error: %v", errA)
+	}
+	resolvedB, errB := contract.CastVote(ctxB, proposal.ProposalID, voteDecisionYes)
+	if errB != nil {
+		t.Fatalf("expected B's simulation to succeed, got error: %v", errB)
+	}
+
+	// Both independently computed votesFor=1 from the same starting
+	// state — the conflict hasn't been detected yet, exactly as real
+	// Fabric wouldn't detect it during simulation either.
+	if resolvedA.VotesFor != 1 || resolvedB.VotesFor != 1 {
+		t.Fatalf("expected both transactions to have independently computed votesFor 1, got A=%d B=%d",
+			resolvedA.VotesFor, resolvedB.VotesFor)
+	}
+
+	if err := stubA.commit(); err != nil {
+		t.Fatalf("expected A's commit to succeed, got error: %v", err)
+	}
+
+	errCommitB := stubB.commit()
+	if errCommitB == nil {
+		t.Fatal("expected B's commit to fail with an MVCC-style conflict, got nil")
+	}
+
+	// The stronger claim, not just "votesFor is right": B's own Vote
+	// asset must be entirely absent from committed state, not merely
+	// absent from the vote count — same standard as mustFail's
+	// len(stub.pending) > 0 check: nothing survives a rejected
+	// transaction.
+	voteAKey := docTypeVote + "\x00" + proposal.ProposalID + "\x00" + "BLCFounderMSP"
+	voteBKey := docTypeVote + "\x00" + proposal.ProposalID + "\x00" + "InstitutionAMSP"
+	if _, exists := ledger.committed[voteBKey]; exists {
+		t.Fatal("expected B's vote to never have committed, but it's present in ledger state")
+	}
+	if _, exists := ledger.committed[voteAKey]; !exists {
+		t.Fatal("expected A's vote to be committed")
+	}
+
+	proposalKeyStr, err := proposalKey(ctxA, proposal.ProposalID)
+	if err != nil {
+		t.Fatalf("failed to build proposal key: %v", err)
+	}
+	var committedProposal MembershipProposal
+	if err := json.Unmarshal(ledger.committed[proposalKeyStr], &committedProposal); err != nil {
+		t.Fatalf("failed to unmarshal committed proposal: %v", err)
+	}
+	if committedProposal.VotesFor != 1 || committedProposal.Status != proposalStatusOpen {
+		t.Fatalf("expected committed proposal to reflect only A's vote (votesFor=1, status=open), got votesFor=%d status=%s",
+			committedProposal.VotesFor, committedProposal.Status)
+	}
+
+	// B retries — a fresh transaction reading the NOW-current committed
+	// state — and this time succeeds cleanly, exactly matching the live
+	// recovery: correctly reaches votesFor=2, approved.
+	ctxB2, stubB2 := newTx(ledger, "txB2", "InstitutionAMSP", time.Now())
+	resolvedB2, err := contract.CastVote(ctxB2, proposal.ProposalID, voteDecisionYes)
+	mustCommit(t, stubB2, err)
+	if resolvedB2.VotesFor != 2 || resolvedB2.Status != proposalStatusApproved {
+		t.Fatalf("expected B's retry to reach votesFor=2, approved, got votesFor=%d status=%s",
+			resolvedB2.VotesFor, resolvedB2.Status)
+	}
+}
