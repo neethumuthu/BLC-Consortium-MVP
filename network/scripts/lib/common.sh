@@ -73,3 +73,29 @@ require_dir() {
     exit 1
   fi
 }
+
+# wait_for_port polls a raw TCP connection until it succeeds — used for
+# orderer/peer readiness, which (unlike the CA) have no plain HTTP
+# endpoint to poll. Shared by network.sh (waiting on every founding/
+# member node) and org-add.sh (Phase 9 — waiting on one new org's own
+# peers).
+#
+# Deliberately spawns a real subprocess (`timeout ... bash -c "exec
+# 3<>..."`), not a bare `(exec 3<>...)` subshell — confirmed the bare
+# form corrupts the CALLING shell's own fd 2 (stderr) for the rest of
+# its life once the connection succeeds, silently swallowing every
+# later `>&2` write, including a script's own "FAILED at stage N" trap
+# message. A forced subprocess boundary doesn't leak that way. See
+# docs/ERROR_LOG.md's 2026-07-10 entry for the full diagnosis.
+wait_for_port() {
+  local port="$1"
+  local tries=30
+  until timeout 1 bash -c "exec 3<>/dev/tcp/localhost/${port}" 2>/dev/null; do
+    tries=$((tries - 1))
+    if [ "$tries" -le 0 ]; then
+      echo "port ${port} did not become ready in time" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}

@@ -51,32 +51,9 @@ on_up_error() {
   exit "$exit_code"
 }
 
-# wait_for_port polls a raw TCP connection until it succeeds — used for
-# orderer/peer readiness, which (unlike the CA) have no plain HTTP
-# endpoint to poll.
-#
-# Deliberately spawns a real subprocess (`timeout ... bash -c "exec
-# 3<>..."`), not a bare `(exec 3<>...)` subshell — confirmed the bare
-# form corrupts the CALLING shell's own fd 2 (stderr) for the rest of
-# its life once the connection succeeds, silently swallowing every
-# later `>&2` write, including this very script's own "FAILED at stage
-# N" trap message. A forced subprocess boundary doesn't leak that way.
-# See docs/ERROR_LOG.md's 2026-07-10 entry for the full diagnosis
-# (found via chaincode.sh's equivalent wait, but this exact function
-# has the identical bug and was almost certainly the real reason a much
-# earlier Phase 6 stage-9 failure produced "zero output").
-wait_for_port() {
-  local port="$1"
-  local tries=30
-  until timeout 1 bash -c "exec 3<>/dev/tcp/localhost/${port}" 2>/dev/null; do
-    tries=$((tries - 1))
-    if [ "$tries" -le 0 ]; then
-      echo "port ${port} did not become ready in time" >&2
-      exit 1
-    fi
-    sleep 1
-  done
-}
+# wait_for_port now lives in lib/common.sh — shared with org-add.sh
+# (Phase 9), which needs the identical readiness check for a newly
+# added org's own peers.
 
 wait_for_all_nodes() {
   local ports
@@ -263,6 +240,15 @@ cmd_wipe() {
   # entry.
   log "tearing down chaincode-as-a-service containers"
   ./scripts/chaincode.sh teardown
+
+  # Same dependency-order reasoning as the chaincode teardown above:
+  # org-add.sh's own CA/peer/CouchDB containers (for any org onboarded
+  # at runtime) are started via plain `docker run`, never
+  # docker-compose, so they must detach from `blc` before compose's own
+  # `down` tries to remove the network. Found the identical gap live —
+  # see docs/ERROR_LOG.md's Phase 9 entry.
+  log "tearing down org-add.sh's own org containers"
+  ./scripts/org-add.sh teardown
 
   log "stopping and removing containers + volumes"
   [ -f "$NET_COMPOSE_FILE" ] && docker compose -f "$NET_COMPOSE_FILE" down -v
