@@ -71,15 +71,29 @@
 # version 1.0 — a first-ever commit. Upgrade support is out of scope for
 # this pass; build it later against a real need, not now.
 #
-# Retry safety: every stage is safe to re-run directly with no wipe/
-# cleanup step. Packaging/install/approve/checkcommitreadiness are all
-# naturally re-runnable, `docker run --name <x>` collisions are handled
-# by removing any existing container of the same name first, and `peer
-# lifecycle chaincode commit` is a single atomic transaction with no
-# partial-commit state.
+# Retry safety: cmd_deploy checks whether the definition is already
+# committed at this exact sequence/version BEFORE packaging/installing/
+# approving anything, and skips straight to (re-)starting containers and
+# init if so. This is not just a nicety — re-running the full deploy
+# after a definition is already committed is actively harmful, not
+# merely redundant: it installs and approves a NEW package under the
+# SAME already-committed sequence, which checkcommitreadiness correctly
+# refuses, but by then the peer's own chaincode launcher has two
+# installed packages associated with one chaincode name and gets
+# confused about which to launch, timing out or erroring with "duplicate
+# chaincodeID" on subsequent invokes — found the hard way, see
+# docs/ERROR_LOG.md's entry on this exact incident. Recovering from that
+# confused state isn't something this script attempts; the fix is
+# preventing it, by detecting "already committed" and never re-running
+# package/install/approve/commit in that case, regardless of which later
+# stage is what actually failed.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source "scripts/lib/common.sh"
+# active_org_lines/org_peer_lines live in lib/orgs.sh — shared with
+# org-add.sh (Phase 9), which needs the same founding/member enumeration
+# to query an existing org and to collect admin signatures.
+source "scripts/lib/orgs.sh"
 
 CHANNEL_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${NETWORK_YAML}'))['channel']['name'])")
 ORDERER_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${NETWORK_YAML}'))['orderer']['name'])")
@@ -104,30 +118,6 @@ on_deploy_error() {
   echo "[chaincode] command failed: ${BASH_COMMAND} (exit ${exit_code})" >&2
   echo "[chaincode] FAILED at stage ${CURRENT_STAGE}: ${CURRENT_STAGE_NAME} — safe to re-run './scripts/chaincode.sh deploy ${CC_NAME}...' directly, no wipe needed" >&2
   exit "$exit_code"
-}
-
-# active_org_lines prints "<org> <msp>" for every founding/member org.
-active_org_lines() {
-  python3 -c "
-import yaml
-net = yaml.safe_load(open('${NETWORK_YAML}'))
-for org in net['organizations']:
-    if org['status'] in ('founding', 'member'):
-        print(f\"{org['name']} {org['msp']}\")
-"
-}
-
-# org_peer_lines prints "<peer_name> <peer_port>" for every peer of the
-# given org.
-org_peer_lines() {
-  local org_name="$1"
-  python3 -c "
-import yaml
-dep = yaml.safe_load(open('${LOCAL_YAML}'))
-dep_org = dep['organizations']['${org_name}']
-for i, p in enumerate(dep_org['peers']):
-    print(f\"peer{i} {p['peer_port']}\")
-"
 }
 
 build_ccaas_image() {
@@ -264,6 +254,62 @@ print('all required orgs have approved: ' + ', '.join(approvals.keys()))
 "
 }
 
+# already_committed reports (via exit code) whether CC_NAME is already
+# committed on the channel at exactly CC_VERSION/CC_SEQUENCE. Queried
+# against the first active org's own peer — querycommitted is a
+# channel-wide fact, not a per-org one, so any org's peer gives the same
+# answer. A chaincode never deployed before simply fails this query
+# (caught by the try/except below), correctly treated as "not
+# committed" rather than an error.
+already_committed() {
+  local first_org first_msp first_peer_port
+  read -r first_org first_msp <<< "$(active_org_lines | head -1)"
+  read -r _ first_peer_port <<< "$(org_peer_lines "$first_org" | head -1)"
+
+  FABRIC_CFG_PATH="$PEERCFG_DIR" \
+  CORE_PEER_LOCALMSPID="$first_msp" \
+  CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${first_org}/users/Admin/msp" \
+  CORE_PEER_ADDRESS="localhost:${first_peer_port}" \
+  CORE_PEER_TLS_ENABLED=true \
+  CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${first_org}/peers/peer0/tls/ca.pem" \
+    peer lifecycle chaincode querycommitted \
+      --channelID "$CHANNEL_NAME" \
+      --name "$CC_NAME" \
+      --output json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if str(data.get('version')) == '$CC_VERSION' and str(data.get('sequence')) == '$CC_SEQUENCE' else 1)
+"
+}
+
+# installed_package_id_for_org recovers an already-installed package's
+# ID by matching CC_LABEL, for the case where already_committed is true
+# and package_and_install_for_org was therefore never called this run —
+# start_ccaas_container still needs a package ID to set CHAINCODE_ID.
+installed_package_id_for_org() {
+  local org_name="$1" org_msp="$2"
+  local first_peer_port
+  read -r _ first_peer_port <<< "$(org_peer_lines "$org_name" | head -1)"
+
+  FABRIC_CFG_PATH="$PEERCFG_DIR" \
+  CORE_PEER_LOCALMSPID="$org_msp" \
+  CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${org_name}/users/Admin/msp" \
+  CORE_PEER_ADDRESS="localhost:${first_peer_port}" \
+  CORE_PEER_TLS_ENABLED=true \
+  CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${org_name}/peers/peer0/tls/ca.pem" \
+    peer lifecycle chaincode queryinstalled --output json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for pkg in data.get('installed_chaincodes', []):
+    if pkg.get('label') == '${CC_LABEL}':
+        print(pkg['package_id'])
+        break
+"
+}
+
 commit_definition() {
   local lines
   mapfile -t lines < <(active_org_lines)
@@ -300,10 +346,59 @@ commit_definition() {
       "${peer_addr_flags[@]}"
 }
 
+# wait_for_ccaas_ready polls the container's actual gRPC listening port
+# from the host, via its Docker-assigned IP on the blc network — ccaas
+# containers never publish CCAAS_PORT to the host (unlike node ports, so
+# network.sh's own wait_for_port can't be reused as-is), so this checks
+# reachability through the bridge network's host-side interface instead.
+# Confirms the chaincode server process is actually accepting
+# connections, not just that `docker run` returned — `docker run -d`
+# only means the container process started, not that its internal gRPC
+# server has finished initializing. This exact gap is why
+# institution-cc's first live init-invoke failed with a container
+# DNS/connection error even though `docker run` itself succeeded — see
+# docs/ERROR_LOG.md.
+#
+# Deliberately spawns a real subprocess (`timeout ... bash -c "exec
+# 3<>..."`), not a bare `(exec 3<>...)` subshell — confirmed the bare
+# form corrupts this script's own fd 2 (stderr) for the rest of its
+# life once the connection succeeds, silently swallowing every later
+# `>&2` write, including on_deploy_error's own "FAILED at stage N"
+# message. A forced subprocess boundary doesn't leak that way. See
+# docs/ERROR_LOG.md's 2026-07-10 entry.
+wait_for_ccaas_ready() {
+  local container_name="$1"
+  local tries=30
+  local ip=""
+  while [ -z "$ip" ]; do
+    ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "blc").IPAddress}}' "$container_name" 2>/dev/null)
+    if [ -z "$ip" ]; then
+      tries=$((tries - 1))
+      if [ "$tries" -le 0 ]; then
+        echo "${container_name} never got an IP on the blc network" >&2
+        exit 1
+      fi
+      sleep 1
+    fi
+  done
+
+  tries=30
+  until timeout 1 bash -c "exec 3<>/dev/tcp/${ip}/${CCAAS_PORT}" 2>/dev/null; do
+    tries=$((tries - 1))
+    if [ "$tries" -le 0 ]; then
+      echo "${container_name} did not become ready on port ${CCAAS_PORT} in time" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 # start_ccaas_container (re)starts this org's chaincode-as-a-service
 # container with the CHAINCODE_ID it registered at install time. Removes
 # any existing container of the same name first, so this is safe to
-# re-run (e.g. after a failed later stage) without manual cleanup.
+# re-run (e.g. after a failed later stage) without manual cleanup. Waits
+# for the container to actually be reachable before returning — the
+# caller (invoke_init) needs it ready immediately, not just started.
 start_ccaas_container() {
   local org_name="$1" package_id="$2"
   local container_name="${CC_NAME}.${org_name}"
@@ -317,6 +412,9 @@ start_ccaas_container() {
     -e CHAINCODE_ID="$package_id" \
     -e CHAINCODE_SERVER_ADDRESS="0.0.0.0:${CCAAS_PORT}" \
     "$CCAAS_IMAGE" >/dev/null
+
+  log "waiting for ${container_name} to become ready"
+  wait_for_ccaas_ready "$container_name"
 }
 
 invoke_init() {
@@ -422,25 +520,35 @@ cmd_deploy() {
   require_dir "${CHAINCODE_ROOT_DIR}/${CC_NAME}" "no such chaincode — expected ${CHAINCODE_ROOT_DIR}/${CC_NAME}"
   build_ccaas_image
 
-  stage 2 "packaging and installing ${CC_NAME} for every org"
   declare -A PACKAGE_IDS
   local org_lines
   mapfile -t org_lines < <(active_org_lines)
   local line org_name org_msp
-  for line in "${org_lines[@]}"; do
-    read -r org_name org_msp <<< "$line"
-    PACKAGE_IDS["$org_name"]=$(package_and_install_for_org "$org_name" "$org_msp")
-  done
 
-  stage 3 "approving ${CC_NAME} for every org"
-  for line in "${org_lines[@]}"; do
-    read -r org_name org_msp <<< "$line"
-    approve_for_org "$org_name" "$org_msp" "${PACKAGE_IDS[$org_name]}"
-  done
+  if already_committed; then
+    log "${CC_NAME} is already committed at sequence ${CC_SEQUENCE}/version ${CC_VERSION} — skipping package/install/approve/commit, recovering installed package IDs instead"
+    stage 2 "recovering already-installed package IDs for ${CC_NAME}"
+    for line in "${org_lines[@]}"; do
+      read -r org_name org_msp <<< "$line"
+      PACKAGE_IDS["$org_name"]=$(installed_package_id_for_org "$org_name" "$org_msp")
+    done
+  else
+    stage 2 "packaging and installing ${CC_NAME} for every org"
+    for line in "${org_lines[@]}"; do
+      read -r org_name org_msp <<< "$line"
+      PACKAGE_IDS["$org_name"]=$(package_and_install_for_org "$org_name" "$org_msp")
+    done
 
-  stage 4 "checking commit readiness and committing"
-  check_commit_readiness
-  commit_definition
+    stage 3 "approving ${CC_NAME} for every org"
+    for line in "${org_lines[@]}"; do
+      read -r org_name org_msp <<< "$line"
+      approve_for_org "$org_name" "$org_msp" "${PACKAGE_IDS[$org_name]}"
+    done
+
+    stage 4 "checking commit readiness and committing"
+    check_commit_readiness
+    commit_definition
+  fi
 
   stage 5 "starting ${CC_NAME} chaincode-as-a-service containers"
   for line in "${org_lines[@]}"; do
