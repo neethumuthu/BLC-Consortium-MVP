@@ -22,6 +22,150 @@ Entry format:
 
 ---
 
+## 2026-07-14 — test-coverage audit found `GetAllInstitutions` and all 4 of `certificate-cc`'s functions had never been live-invoked
+
+**Phase:** 9 (post-closeout) — reviewing what had and hadn't actually
+been exercised against a real network, prompted by a direct question
+("did we test institution-cc's all functions?") rather than a live
+failure.
+**Symptom:** none — this is a coverage gap, not a broken command.
+Re-reading `institution-cc`'s full source (`governance.go` +
+`queries.go`, 7 public functions total) against this session's actual
+transcript showed `GetAllInstitutions` had never been invoked, live or
+otherwise. Separately, `certificate-cc`'s 4 functions
+(`IssueCertificate`, `VerifyCertificate`, `GetCertificate`,
+`GetCertificatesByInstitution`) had unit tests and confirmed deployment
+plumbing (package/install/approve/commit/ccaas-start), but had never
+been invoked against a real running network at all — no certificate
+had ever actually been issued on this consortium.
+**Command / context:** a deliberate audit, not a debugging session —
+cross-checked every public chaincode function against what this
+session's own commands had actually exercised, rather than assuming
+"the chaincode is deployed" meant "the chaincode's functions work."
+**Root cause:** testing had consistently focused on the *deployment and
+onboarding* mechanics (install/approve/commit/ccaas-start, `org-add.sh`
+stages) — proven thoroughly — without a corresponding pass to confirm
+every individual chaincode function actually executes correctly
+end-to-end. Easy gap to miss: a chaincode can be fully, correctly
+deployed and committed while several of its own functions have never
+once been called.
+**Resolution:** live-invoked all 5 previously-untested functions against
+a real (rebuilt) network and confirmed each one directly:
+- `GetAllInstitutions` → returned all 3 institutions
+  (`BLCFounderMSP`, `InstitutionAMSP`, `InstitutionBMSP`), each
+  `status:"active"`.
+- `IssueCertificate` (as `BLCFounderMSP`) → committed `VALID` on both
+  peers, returned `consortiumNumber:1`, `issuerSequenceNumber:1`.
+- `VerifyCertificate` (same certificate) → `"status":"VALID"`.
+- `GetCertificate` (same certificate) → returned the identical record.
+- `GetCertificatesByInstitution("BLCFounderMSP")` → returned an array
+  containing that same certificate.
+All 5 work correctly. Full detail (unedited command output, matched
+against the actual expected shape) in `docs/BUILD_LOG.md`'s matching
+entry.
+**Follow-up:** worth treating "is the chaincode deployed" and "have all
+its functions actually been exercised" as two genuinely separate
+questions going forward, not one implying the other — this audit is
+the second time in this project a gap was found only by explicitly
+asking the second question.
+
+---
+
+## 2026-07-14 — stage 6 used a newly-joined peer as a signer before it finished catching up, failing with "creator org unknown, creator is malformed"
+
+**Phase:** 9 — closing a test-coverage audit gap: live-invoking
+`institution-cc`'s `GetAllInstitutions` and all 4 of `certificate-cc`'s
+functions, which had never been directly invoked before. Required a
+full rebuild first (the network had been fully wiped since Phase 9
+closed out), and this surfaced during that rebuild's `org-add.sh
+InstitutionB` run.
+**Symptom:** stage 6 (`install_and_approve_chaincode` →
+`approve_for_org`) failed installing `institution-cc` for
+`InstitutionB`: `Error: failed to endorse proposal: rpc error: code =
+Unknown desc = error validating proposal: access denied: channel
+[blcchannel] creator org unknown, creator is malformed`. Stage 5 (peer
+join) had completed successfully immediately beforehand — both peers
+joined on the first attempt, no retry needed.
+**Command / context:** `./org-add.sh InstitutionB`, stage 6 running
+~230ms after stage 5's `peer channel join` proposals were submitted
+(`13:14:56.910` join, `13:14:57.144` approve attempt).
+**Root cause:** a successful `peer channel join` only means the join
+proposal was accepted — the peer still needs to asynchronously fetch
+and process every historical block afterward before its own local MSP
+manager actually recognizes its own org (and every other org) as a
+channel member. `install_and_approve_chaincode`'s `approve_for_org`
+call used `InstitutionB`'s own peer0 as the signer for
+`approveformyorg` immediately after stage 5 returned, with no wait for
+that catch-up to finish. Confirmed, not just inferred: retrying the
+identical `org-add.sh InstitutionB` invocation ~20 minutes later (with
+nothing else changed) succeeded — `peer channel getinfo` against the
+same peer showed it had reached height 15 by then. This is a distinct
+failure mode from the earlier TLS-readiness race documented elsewhere
+in this log: that one was about the join call itself failing before
+the peer's TLS layer was ready; this one is about the join succeeding
+but the peer's channel-config view still being stale afterward.
+**Resolution:** added `wait_for_peer_msp_sync(org_name, org_msp)`,
+called at the end of `join_new_org_to_channel` (stage 5) — polls
+org_name's own peer0 via `peer channel getinfo` until its reported
+height reaches an existing active org's peer height, rather than a
+fixed sleep (how long catch-up takes grows with the channel's history,
+so a fixed delay would eventually become insufficient again). Stage 6
+now never has to think about this — stage 5 doesn't return until the
+new org's peer0 is genuinely caught up.
+**The fix itself shipped with two more real bugs, both caught only by
+insisting on re-triggering the actual race instead of trusting the
+diagnosis.** The first version was written and committed to the working
+tree without being tested against a fresh reproduction — the "20
+minutes later, nothing else changed, and it succeeded" evidence above
+proved the *diagnosis*, not the *fix*, since the fix didn't exist yet
+at the time of that retry. Explicitly re-testing by rebuilding from
+scratch and running `org-add.sh InstitutionB` immediately after the
+vote (no artificial pause) surfaced two further problems in
+`wait_for_peer_msp_sync` itself:
+1. **A `set -e`/`pipefail` crash.** `common.sh` sets `set -Eeuo
+   pipefail`. When `InstitutionB`'s peer0 didn't yet recognize the
+   channel (the exact race being waited out), `peer channel getinfo`
+   itself exited non-zero, and that failure propagated through the pipe
+   into the `new_height=$(...)` assignment, aborting the whole script
+   instead of looping. Fixed by adding `|| true` to both height-fetching
+   assignments, matching the identical pattern already used in
+   `require_active_institution`.
+2. **A JSON-parsing bug that made the function unable to ever succeed,
+   for anyone.** `peer channel getinfo`'s actual output is `Blockchain
+   info: {...}` — a literal text prefix, not pure JSON — the exact
+   format seen repeatedly all session (including in `network.sh`'s own
+   `verify_channel_membership`), yet missed when writing this function.
+   `json.load(sys.stdin)` directly can never parse that. Confirmed live:
+   after fixing bug 1, the retry loop correctly engaged and logged all
+   30 attempts, but **both** the new org's height *and* the reference
+   height (from `BLCFounder`'s peer0, already fully synced this whole
+   session) came back "unknown" every single time — proving the parse
+   itself was broken, unrelated to actual sync state. Fixed by
+   extracting the substring from the first `{` before parsing.
+After both fixes, a further retry (still the same resumed run, both
+peers already joined) showed `InstitutionB's peer0 caught up (height
+15)` with a real, correctly-parsed number, and the full pipeline
+completed through stage 7.
+**Precise scope of what's now proven, stated plainly rather than
+rounded up:** the retry loop's mechanics (sleep, decrement, log,
+eventual give-up) were fully exercised across 30 real iterations in the
+run that hit the parsing bug. Correct parsing and comparison of a real
+height value were confirmed separately, in the final successful run.
+What was **not** directly observed in one run: multiple iterations
+where both parsing and comparison operate on real numbers that start
+apart and visibly converge — every successful run so far succeeded on
+the first real-number check, because enough time had elapsed during the
+fixes for the peer to already be caught up. The two proven pieces don't
+interact in a way that gives real reason to doubt them combined, but
+that is a reasoned inference, not a fourth direct observation.
+**Follow-up:** if a future run ever shows the retry loop looping
+multiple times with real (non-"unknown") heights before converging,
+that would close this last, low-risk gap directly. Not chased further
+for now — diminishing returns against the cost of another full
+wipe-and-time-the-race attempt.
+
+---
+
 ## 2026-07-13 — org-add.sh stages 2 and 5 both proved non-idempotent when testing stage 6, fixed with real skip-if-already-done guards
 
 **Phase:** 9 — testing stage 6 (chaincode install+approve) required

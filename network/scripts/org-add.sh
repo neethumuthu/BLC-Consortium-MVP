@@ -565,6 +565,106 @@ join_new_org_to_channel() {
       fi
     fi
   done < <(org_peer_lines "$org_name")
+
+  # A successful `peer channel join` only means the join PROPOSAL was
+  # accepted — the peer still needs to asynchronously fetch and process
+  # every historical block afterward before its own local MSP manager
+  # actually recognizes org_name (and every other org) as a channel
+  # member. Confirmed live: using org_name's peer0 as a signer for
+  # stage 6's approveformyorg immediately after a successful join failed
+  # with "access denied: channel [X] creator org unknown, creator is
+  # malformed" — a DIFFERENT failure mode than the TLS-readiness race
+  # already handled above, since the join call itself succeeded; it's
+  # the async catch-up afterward that hadn't finished. See
+  # docs/ERROR_LOG.md. Waiting here, at the end of stage 5, means stage
+  # 6 never has to think about this at all.
+  wait_for_peer_msp_sync "$org_name" "$org_msp"
+}
+
+# wait_for_peer_msp_sync polls org_name's own peer0 until its reported
+# blockchain height catches up to an EXISTING active org's peer height —
+# not a fixed sleep, since how long catch-up takes depends on how many
+# blocks exist, which grows over the life of this network. Once heights
+# match, org_name's peer0 has processed every block up to the same
+# point as an already-fully-synced peer, so its local MSP manager is as
+# current as anyone else's.
+wait_for_peer_msp_sync() {
+  local org_name="$1" org_msp="$2"
+
+  local first_org first_msp first_peer_port
+  read -r first_org first_msp <<< "$(active_org_lines | head -1)"
+  read -r _ first_peer_port <<< "$(org_peer_lines "$first_org" | head -1)"
+
+  local new_peer_port
+  read -r _ new_peer_port <<< "$(org_peer_lines "$org_name" | head -1)"
+
+  log "waiting for ${org_name}'s peer0 to catch up to the channel's current height"
+  local tries=30
+  while [ "$tries" -gt 0 ]; do
+    local reference_height new_height
+    # `|| true` on both assignments is load-bearing, not decoration:
+    # common.sh sets `set -Eeuo pipefail`, so when org_name's peer0
+    # doesn't yet recognize the channel (the exact race this function
+    # exists to wait out), `peer channel getinfo` itself exits non-zero
+    # — and under pipefail that failure propagates through the pipe to
+    # this assignment. Without `|| true`, that non-zero exit would abort
+    # the whole script immediately via -e, before the loop ever gets a
+    # chance to retry. Confirmed live: the first version of this
+    # function crashed exactly this way on the very first iteration
+    # instead of looping — see docs/ERROR_LOG.md.
+    reference_height=$(FABRIC_CFG_PATH="$PEERCFG_DIR" \
+      CORE_PEER_LOCALMSPID="$first_msp" \
+      CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${first_org}/users/Admin/msp" \
+      CORE_PEER_ADDRESS="localhost:${first_peer_port}" \
+      CORE_PEER_TLS_ENABLED=true \
+      CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${first_org}/peers/peer0/tls/ca.pem" \
+        peer channel getinfo -c "$CHANNEL_NAME" 2>/dev/null | python3 -c "import json,sys
+# peer channel getinfo's actual output is 'Blockchain info: {...}' — a
+# literal text prefix, not pure JSON on its own. json.load(sys.stdin)
+# directly can never parse this; confirmed live (see docs/ERROR_LOG.md)
+# that the original version silently failed to parse EVERY time,
+# including for an already-fully-synced reference peer, making this
+# function unable to ever succeed regardless of actual sync state.
+raw = sys.stdin.read()
+try:
+    print(json.loads(raw[raw.index('{'):])['height'])
+except Exception:
+    pass" 2>/dev/null) || true
+
+    new_height=$(FABRIC_CFG_PATH="$PEERCFG_DIR" \
+      CORE_PEER_LOCALMSPID="$org_msp" \
+      CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${org_name}/users/Admin/msp" \
+      CORE_PEER_ADDRESS="localhost:${new_peer_port}" \
+      CORE_PEER_TLS_ENABLED=true \
+      CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${org_name}/peers/peer0/tls/ca.pem" \
+        peer channel getinfo -c "$CHANNEL_NAME" 2>/dev/null | python3 -c "import json,sys
+# peer channel getinfo's actual output is 'Blockchain info: {...}' — a
+# literal text prefix, not pure JSON on its own. json.load(sys.stdin)
+# directly can never parse this; confirmed live (see docs/ERROR_LOG.md)
+# that the original version silently failed to parse EVERY time,
+# including for an already-fully-synced reference peer, making this
+# function unable to ever succeed regardless of actual sync state.
+raw = sys.stdin.read()
+try:
+    print(json.loads(raw[raw.index('{'):])['height'])
+except Exception:
+    pass" 2>/dev/null) || true
+
+    if [ -n "$reference_height" ] && [ -n "$new_height" ] && [ "$new_height" -ge "$reference_height" ]; then
+      log "${org_name}'s peer0 caught up (height ${new_height})"
+      return 0
+    fi
+    # Logged every attempt, not just on success/failure — this is the
+    # mechanism actually engaging, so it must be directly observable in
+    # the output, not something inferred from elapsed wall-clock time
+    # between log lines.
+    log "${org_name}'s peer0 not caught up yet (reference height ${reference_height:-unknown}, its own height ${new_height:-unknown}) — retrying in 1s (${tries} attempts left)"
+    tries=$((tries - 1))
+    sleep 1
+  done
+
+  echo "${org_name}'s peer0 did not catch up to the channel's current height in time" >&2
+  exit 1
 }
 
 # org_crypto_exists reports (via exit code) whether org_name's org-level
@@ -741,7 +841,7 @@ for org in net['organizations']:
     bring_up_org_containers "$ORG_NAME" "$ORG_MSP"
   fi
 
-   if is_channel_member "$ORG_NAME"; then
+  if is_channel_member "$ORG_NAME"; then
     log "${ORG_NAME} is already a channel member — skipping stages 3-4 (MSP injection, anchor peers)"
   else
     stage 3 "injecting ${ORG_NAME}'s MSP definition into the channel, signed by existing orgs"
