@@ -163,6 +163,18 @@ multiple times with real (non-"unknown") heights before converging,
 that would close this last, low-risk gap directly. Not chased further
 for now — diminishing returns against the cost of another full
 wipe-and-time-the-race attempt.
+**This bug was latent in `org-add.sh` as already pushed to
+`origin/main`.** The version committed in `5d83ecc` (`feat: org-add.sh
+runtime onboarding pipeline`) and pushed the same day contains this
+race unfixed — it was never triggered by any test run before this one,
+since every prior live test either had enough incidental delay between
+stages 5 and 6 to mask it, or wiped the network before reaching this
+exact sequence again. The fix lands in commit `1e8adc9`, a full day
+later. Stated plainly, not softened: for that one-day window, the
+pushed, "complete" Phase 9 build contained a real bug that could
+reproduce on another machine or under different timing, and the
+history should show that honestly rather than imply the bug never
+existed until it was found.
 
 ---
 
