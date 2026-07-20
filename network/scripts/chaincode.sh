@@ -67,9 +67,15 @@
 # sequence) — only those three need to match across orgs, not the
 # package ID itself.
 #
-# Sequence/version scope: this script only ever commits at sequence 1,
-# version 1.0 — a first-ever commit. Upgrade support is out of scope for
-# this pass; build it later against a real need, not now.
+# Sequence/version scope: this script only ever commits at ONE fixed
+# sequence/version pair at a time (see CC_VERSION/CC_SEQUENCE below),
+# shared across every chaincode name deployed through it — general N-
+# version upgrade support (independent versioning per chaincode name) is
+# still out of scope; bumping the shared pair for one real code change
+# means every other already-deployed chaincode name must be redeployed
+# in lockstep too (see the 2026-07-17 RevokeCertificate upgrade for the
+# first real instance of this: institution-cc had to be redeployed
+# unchanged, purely to move to the same new sequence).
 #
 # Retry safety: cmd_deploy checks whether the definition is already
 # committed at this exact sequence/version BEFORE packaging/installing/
@@ -105,7 +111,18 @@ ORDERER_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${NETWORK_YAM
 ORDERER_GENERAL_PORT=$(python3 -c "import yaml; print(yaml.safe_load(open('${LOCAL_YAML}'))['orderer']['nodes'][0]['general_port'])")
 ORDERER_TLS_CA="${CRYPTO_DIR}/organizations/${ORDERER_NAME}/orderers/orderer0/tls/ca.pem"
 
-CC_VERSION="1.0"
+CC_VERSION="1.1"
+# CC_SEQUENCE must match this channel's ACTUAL commit history, not a
+# fixed value — Fabric enforces sequence numbers strictly incrementing
+# by exactly 1 from whatever's already committed (0 on a channel where a
+# chaincode name has never been committed). Confirmed live 2026-07-20:
+# committing at sequence 2 on a freshly wiped/rebuilt channel failed with
+# "requested sequence 2 is larger than the next available sequence
+# number 1" — the RevokeCertificate upgrade's "bump to 1.1/2" design
+# assumed upgrading an ALREADY-deployed 1.0/1 instance; a fresh wipe
+# resets that history, so the first-ever commit on a new channel must be
+# sequence 1 regardless of version string. Set this to match whatever
+# this specific channel's real history actually is before deploying.
 CC_SEQUENCE="1"
 # CCAAS_PORT now lives in lib/chaincode.sh (shared with org-add.sh).
 

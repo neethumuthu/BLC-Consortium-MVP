@@ -68,11 +68,15 @@ ORDERER_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${NETWORK_YAM
 ORDERER_GENERAL_PORT=$(python3 -c "import yaml; print(yaml.safe_load(open('${LOCAL_YAML}'))['orderer']['nodes'][0]['general_port'])")
 ORDERER_TLS_CA="${CRYPTO_DIR}/organizations/${ORDERER_NAME}/orderers/orderer0/tls/ca.pem"
 
-# CC_VERSION/CC_SEQUENCE match chaincode.sh's own fixed, documented
-# design decision — "this script only ever commits at sequence 1,
-# version 1.0" — so a new org approves against exactly the same
-# version/sequence every existing chaincode was actually committed at.
-CC_VERSION="1.0"
+# CC_VERSION/CC_SEQUENCE must always match chaincode.sh's own values
+# exactly — so a new org approves against exactly the same version/
+# sequence every existing chaincode was actually committed at. These are
+# NOT arbitrary fixed constants: CC_SEQUENCE in particular must match
+# whatever this channel's real chaincode-commit history actually is
+# (confirmed live 2026-07-20 — see chaincode.sh's own comment on this).
+# Currently 1.1/1, matching a freshly wiped/rebuilt channel's first-ever
+# commit of the RevokeCertificate-containing code.
+CC_VERSION="1.1"
 CC_SEQUENCE="1"
 
 CURRENT_STAGE=0
