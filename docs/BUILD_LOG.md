@@ -2052,3 +2052,117 @@ fresh channel's actual (zero) prior commit history, keeping
 implemented, unit-tested, and proven working end-to-end against a real
 running 3-org network, with the confirmed authorization/priority/
 idempotency rules all directly observed, not assumed.
+
+---
+
+## Phase 11 — NestJS Fabric Gateway backend
+
+**Goal:** implement the "NestJS Fabric Gateway service" named in
+`ARCHITECTURE.md` but never built — a REST API fronting the certificate
+lifecycle (issue/get/verify/revoke/list-by-institution) plus two
+read-only institution lookups, following Szymon's 2026-07-15
+confirmation that backend integration is the next phase of work.
+
+**Design decisions, confirmed with the user before writing any code**
+(not assumed, per this project's standing discipline):
+1. Fabric SDK: `@hyperledger/fabric-gateway` (modern, Fabric 2.4+
+   official SDK) over the legacy `fabric-network` SDK — connects via
+   direct gRPC to one peer per org using that org's TLS root cert +
+   signing identity directly, not the connection-profile JSON files
+   `blcgen generate profiles` produces.
+2. Identity/deployment model: one shared NestJS codebase, deployed as N
+   separate running instances (one per org), each configured via
+   environment variables — mirrors this repo's existing "one
+   image/template, N per-org instances via env vars" pattern
+   (`docker-compose-net.yaml.tmpl`, ccaas containers).
+3. Runs on the host (`localhost:<peer_port>`), matching every peer CLI
+   command used throughout this project — no containerization this
+   phase.
+4. Endpoint scope: 7 of 11 non-`InitLedger` functions — full certificate
+   lifecycle plus `GetInstitution`/`GetAllInstitutions` (needed to make
+   issuance usable end-to-end). Governance/voting functions
+   (`RegisterInstitution`/`ProposeNewMember`/`CastVote`/`GetProposal`)
+   deferred — still tied to the manual `org-add.sh` ceremony, not a pure
+   API action.
+5. No HTTP-level authentication this phase — confirmed explicitly
+   scoped (demos run screen-shared on the user's own machine only,
+   cloud deployment a real but non-immediate future consideration),
+   documented in `ARCHITECTURE.md`'s "Key decisions" #10 as a hard
+   prerequisite gate before any cloud/remote deployment, not an
+   optional hardening step.
+
+**Grounded facts confirmed by direct inspection before designing** (not
+assumed): each org's Admin MSP private key has no fixed filename (a
+random `*_sk` hash in `users/Admin/msp/keystore/`, unlike the fixed
+`tls/key.pem`) — the backend globs this directory at startup; peer TLS
+certs were enrolled with `--csr.hosts localhost`, so no
+`ssl_target_name_override` is needed connecting from the host; no
+peer-side mutual TLS is configured, so
+`grpc.credentials.createSsl(rootCert)` alone suffices; the channel's
+`MAJORITY Endorsement` policy means a single gRPC connection to one
+org's peer is sufficient even for `IssueCertificate`, since Fabric's own
+Gateway/discovery service transparently routes endorsement.
+
+**Implementation:** scaffolded `backend/` from scratch (previously
+completely empty) — `FabricGatewayModule`/`FabricGatewayService` (one
+long-lived gRPC connection per instance, established at `onModuleInit`,
+torn down at `onModuleDestroy`), `fabric-identity.util.ts`'s
+keystore-globbing, a global `FabricExceptionFilter` translating Fabric
+Gateway SDK exceptions into HTTP status codes, and
+`InstitutionsModule`/`CertificatesModule` with DTOs matching the Go
+structs exactly (including the `metadata`-must-be-`JSON.stringify`'d
+wire-format gotcha already known from the peer CLI work).
+
+**Bug found and fixed — `SubmitError` type-only export broke the
+build.** Full detail in `docs/ERROR_LOG.md`'s 2026-07-20 entry:
+`@hyperledger/fabric-gateway`'s public entry point re-exports
+`SubmitError` as type-only even though it's a real class; fixed by
+relying on `SubmitError extends GatewayError` (catching `GatewayError`
+already covers it via `instanceof`) rather than naming it directly in
+`@Catch()`.
+
+**Bug found and fixed — revoke endpoint returned `201` instead of
+`200`.** NestJS's default status code for any `@Post()` handler is
+`201 Created`, correct for `IssueCertificate` (creates a resource) but
+wrong for `RevokeCertificate` (mutates an existing one, creates
+nothing). Fixed with an explicit `@HttpCode(HttpStatus.OK)`, confirmed
+live via a fresh issue+revoke cycle.
+
+**Verification:** live end-to-end against the real running 3-org
+network, real unedited terminal output confirmed for every step:
+- Clean startup as `BLCFounderMSP` (`localhost:7051`), all 7 routes
+  mapped, no TLS/path errors.
+- `GET /institutions` correctly returned only the 2 registered
+  institutions (not 3) — accurately reflecting that `InstitutionB`,
+  though a real channel member, was never re-registered in this
+  session's freshly-rebuilt ledger; not a bug.
+- `GET /institutions/BLCFounderMSP`, `POST /certificates` (issue),
+  `GET /certificates/:id`, `GET /certificates/:id/verification`
+  (`VALID`), `GET /institutions/:id/certificates` (correctly showing
+  both a peer-CLI-issued and an API-issued certificate together,
+  including a previously-revoked one with its `revokedAt`/
+  `revokedReason`) — all cross-checked and correct.
+- A second instance as `InstitutionAMSP` (`localhost:9051`) attempting
+  to revoke `BLCFounder`'s certificate was rejected with a mapped `403`
+  (`EndorseError`, "is not the issuer") — confirmed via the actual
+  logged exception shape, not assumed.
+- The genuine issuer's revoke succeeded (`200` after the status-code
+  fix); a second revoke attempt on the same certificate was rejected
+  with a mapped `409` ("already revoked").
+- Graceful shutdown confirmed (`Ctrl+C` → clean, fast exit, no hanging
+  gRPC connection).
+
+**Result:** Phase 11 exit condition met — the backend is implemented,
+builds cleanly, and is proven working end-to-end against the real live
+network, including the cross-org authorization boundary and
+error-mapping behavior, not assumed from unit tests alone (none were
+written this phase — flagged as a real gap, see Follow-up).
+
+**Follow-up:** no automated tests exist for the backend yet (unlike
+every chaincode function, which has a full unit test suite) — this
+phase's verification was entirely live/manual. Worth adding Jest-based
+unit tests (mocking `FabricGatewayService`) and/or e2e tests before
+this grows further. Also: `RegisterInstitution`/`ProposeNewMember`/
+`CastVote`/`GetProposal` remain unexposed — revisit once/if
+`org-add.sh`'s stages get their own API-triggerable hooks (see this
+phase's endpoint-scope decision above).

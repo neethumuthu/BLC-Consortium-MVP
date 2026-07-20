@@ -22,6 +22,40 @@ Entry format:
 
 ---
 
+## 2026-07-20 — TypeScript build failed: "'SubmitError' cannot be used as a value because it was exported using 'export type'"
+
+**Phase:** 11 — NestJS Fabric Gateway backend, global exception filter.
+**Symptom:** `npm run build` failed:
+`src/common/filters/fabric-exception.filter.ts:18:22 - error TS1362:
+'SubmitError' cannot be used as a value because it was exported using
+'export type'.`
+**Command / context:**
+    `@Catch(EndorseError, SubmitError, CommitError, GatewayError)` in a
+    global NestJS exception filter, referencing `SubmitError` imported
+    from `@hyperledger/fabric-gateway`.
+**Root cause:** `@hyperledger/fabric-gateway@1.11.0`'s public entry
+point (`index.d.ts`) re-exports `SubmitError` as a type-only export
+(`export type { SubmitError } from './submiterror'`), even though
+`SubmitError` is a real runtime class internally (`export declare class
+SubmitError extends GatewayError`, confirmed by reading the package's
+own `submiterror.d.ts`). TypeScript enforces the type-only re-export at
+the package boundary, so `SubmitError` can be used as a *type* but not
+referenced as a *value* (e.g. inside a decorator) through the public
+import.
+**Resolution:** Removed `SubmitError` from the `@Catch()` decorator's
+value list. Both `SubmitError` and `EndorseError` extend `GatewayError`
+(confirmed via `gatewayerror.d.ts`/`endorseerror.d.ts`/
+`submiterror.d.ts`) — only `CommitError` extends plain `Error` instead
+— so `@Catch(EndorseError, CommitError, GatewayError)` already catches
+`SubmitError` instances too via `instanceof`, with no loss of coverage.
+`SubmitError` remains usable as a TypeScript *type* in the filter's type
+annotations, since the type-only restriction only blocks value usage.
+**Follow-up:** none — fully resolved, confirmed by the subsequent clean
+build and the live error-mapping test which specifically exercised an
+`EndorseError` path (a non-issuer's rejected `RevokeCertificate` call).
+
+---
+
 ## 2026-07-20 — chaincode commit failed with "requested sequence 2 is larger than the next available sequence number 1"
 
 **Phase:** 10 — RevokeCertificate implementation for `certificate-cc`,
