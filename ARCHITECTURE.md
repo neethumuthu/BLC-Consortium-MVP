@@ -215,6 +215,21 @@ blc/
    `blcgen doctor` (environment preflight). Both are cheap to add later and
    don't need to exist before the MVP works.
 
+10. **Backend has no HTTP-level authentication — an explicitly scoped
+    decision with a hard trigger, not an oversight.** The NestJS Gateway
+    service (2026-07-20) currently trusts every caller on its HTTP layer;
+    the only identity boundary is which org's Fabric signing key a given
+    running instance holds (one instance per org, per env-configured
+    identity — see `backend/`). This is valid *only* while the service
+    runs on localhost for screen-shared demos, confirmed explicitly with
+    the user rather than assumed. **Before any cloud or remote
+    deployment, adding HTTP auth (API-key or JWT) is a hard prerequisite
+    gate, not an optional hardening step** — the moment this backend
+    stops being localhost-only, any network-reachable caller could
+    invoke `IssueCertificate`/`RevokeCertificate` as any institution with
+    zero credential, since the Fabric-identity trust boundary is
+    invisible to an HTTP caller.
+
 ## Implementation order
 
 1. Repo folder skeleton + `.gitignore` (`generated/`, `crypto/`, `channel-artifacts/`)
