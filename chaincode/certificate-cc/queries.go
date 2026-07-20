@@ -59,7 +59,11 @@ func (s *SmartContract) GetCertificatesByInstitution(ctx contractapi.Transaction
 // VerifyCertificate recalculates certificateID's hash from its stored
 // holderName/holderDetails/metadata and compares it against the stored
 // certificateHash. Read-only, no caller restriction, per the design doc
-// ("Caller: Anyone").
+// ("Caller: Anyone"). Returns TAMPERED, REVOKED, or VALID, in that
+// priority order — a tampered certificate reports TAMPERED even if it
+// has ALSO been revoked (data integrity is checked before status), and
+// only an untampered certificate's revoked status is ever surfaced as
+// REVOKED.
 func (s *SmartContract) VerifyCertificate(ctx contractapi.TransactionContextInterface, certificateID string) (*VerificationResult, error) {
 	certificate, err := getCertificate(ctx, certificateID)
 	if err != nil {
@@ -75,8 +79,11 @@ func (s *SmartContract) VerifyCertificate(ctx contractapi.TransactionContextInte
 	}
 
 	verificationStatus := verificationStatusValid
-	if recomputedHash != certificate.CertificateHash {
+	switch {
+	case recomputedHash != certificate.CertificateHash:
 		verificationStatus = verificationStatusTampered
+	case certificate.Status == certificateStatusRevoked:
+		verificationStatus = verificationStatusRevoked
 	}
 
 	return &VerificationResult{

@@ -9,18 +9,23 @@ const docTypeCertificate = "certificate"
 
 const (
 	certificateStatusActive = "active"
-	// certificateStatusRevoked is declared per the design doc's
-	// Certificate.status field ("active | revoked"), but — same shape of
-	// gap as institution-cc's proposalStatusRejected — no function in
-	// this phase ever sets it. RevokeCertificate is not yet scoped by
-	// the team (see docs/BUILD_LOG.md's Phase 8 entry); every Certificate
-	// this chaincode creates has status "active".
+	// certificateStatusRevoked is set by RevokeCertificate on an
+	// issuer-initiated revocation (see revokecertificate.go). Every
+	// Certificate this chaincode creates starts at
+	// certificateStatusActive; only RevokeCertificate ever transitions
+	// one to certificateStatusRevoked, and never back.
 	certificateStatusRevoked = "revoked"
 )
 
 const (
 	verificationStatusValid    = "VALID"
 	verificationStatusTampered = "TAMPERED"
+	// verificationStatusRevoked is returned by VerifyCertificate when
+	// the stored hash matches (not tampered) but the certificate has
+	// since been revoked by its issuer. Hash-tampering is checked FIRST
+	// and always wins over revocation — see VerifyCertificate's own
+	// comment in queries.go for why.
+	verificationStatusRevoked = "REVOKED"
 )
 
 // certCounterKey holds the consortium-wide, cross-institution sequential
@@ -67,14 +72,25 @@ type Certificate struct {
 	IssuerID        string                 `json:"issuerId"`
 	IssuedAt        string                 `json:"issuedAt"`
 	Status          string                 `json:"status"` // active | revoked
-	DocType         string                 `json:"docType"`
+	// RevokedAt/RevokedReason are set together, exactly once, by
+	// RevokeCertificate — never independently, and never overwritten
+	// once set (RevokeCertificate errors on an already-revoked
+	// certificate rather than silently updating them). Same
+	// metadata-tag requirement as Metadata above: contractapi treats
+	// every struct field as required in its response schema unless this
+	// tag says otherwise, and IssueCertificate's own response never sets
+	// these two fields.
+	RevokedAt     string `json:"revokedAt,omitempty" metadata:"revokedAt,optional"`
+	RevokedReason string `json:"revokedReason,omitempty" metadata:"revokedReason,optional"`
+	DocType       string `json:"docType"`
 }
 
-// VerificationResult is VerifyCertificate's return type per the design
-// doc: "{ status: VALID | TAMPERED, certificate: Certificate }". Both
-// fields are always populated on a successful call (a nonexistent
-// certificateId returns a Go error instead, never a partial struct), so
-// neither needs omitempty/metadata-optional treatment.
+// VerificationResult is VerifyCertificate's return type. Both fields are
+// always populated on a successful call (a nonexistent certificateId
+// returns a Go error instead, never a partial struct), so neither needs
+// omitempty/metadata-optional treatment. VerificationStatus is one of
+// VALID, TAMPERED, or REVOKED — see VerifyCertificate's own doc comment
+// for the priority order between the latter two.
 type VerificationResult struct {
 	VerificationStatus string       `json:"status"`
 	Certificate        *Certificate `json:"certificate"`

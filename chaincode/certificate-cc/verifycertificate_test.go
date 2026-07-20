@@ -112,3 +112,66 @@ func TestVerifyCertificate_DoesNotExist(t *testing.T) {
 		t.Fatal("expected an error for a nonexistent certificate, got nil")
 	}
 }
+
+func TestVerifyCertificate_RevokedCertificate(t *testing.T) {
+	ledger := newFakeLedger()
+	hash, err := computeCertificateHash("Erin", "Bachelor of Arts", nil)
+	if err != nil {
+		t.Fatalf("failed to compute hash: %v", err)
+	}
+	seedCertificate(ledger, &Certificate{
+		CertificateID:   "cert5",
+		HolderName:      "Erin",
+		HolderDetails:   "Bachelor of Arts",
+		CertificateHash: hash, // untampered — matches stored fields
+		IssuerID:        "BLCFounderMSP",
+		Status:          certificateStatusRevoked,
+		RevokedAt:       "2026-01-01T00:00:00Z",
+		RevokedReason:   "credential found to be fraudulent",
+		DocType:         docTypeCertificate,
+	})
+
+	ctx := newQueryCtx(ledger)
+	sc := &SmartContract{}
+
+	result, err := sc.VerifyCertificate(ctx, "cert5")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.VerificationStatus != verificationStatusRevoked {
+		t.Fatalf("expected REVOKED, got %s", result.VerificationStatus)
+	}
+}
+
+func TestVerifyCertificate_TamperedTakesPriorityOverRevoked(t *testing.T) {
+	// A certificate that is BOTH revoked AND has a hash mismatch must
+	// report TAMPERED, never REVOKED — hash integrity is checked first,
+	// per the confirmed product decision, regardless of status.
+	ledger := newFakeLedger()
+	originalHash, err := computeCertificateHash("Frank", "Bachelor of Science", nil)
+	if err != nil {
+		t.Fatalf("failed to compute hash: %v", err)
+	}
+	seedCertificate(ledger, &Certificate{
+		CertificateID:   "cert6",
+		HolderName:      "Frank",
+		HolderDetails:   "Doctor of Medicine", // changed after the hash was computed
+		CertificateHash: originalHash,
+		IssuerID:        "BLCFounderMSP",
+		Status:          certificateStatusRevoked,
+		RevokedAt:       "2026-01-01T00:00:00Z",
+		RevokedReason:   "credential found to be fraudulent",
+		DocType:         docTypeCertificate,
+	})
+
+	ctx := newQueryCtx(ledger)
+	sc := &SmartContract{}
+
+	result, err := sc.VerifyCertificate(ctx, "cert6")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.VerificationStatus != verificationStatusTampered {
+		t.Fatalf("expected TAMPERED to take priority over REVOKED, got %s", result.VerificationStatus)
+	}
+}
