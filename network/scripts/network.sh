@@ -128,13 +128,43 @@ for org in net['organizations']:
   for line in "${lines[@]}"; do
     read -r org_name org_msp peer_name peer_port <<< "$line"
     log "joining ${peer_name}.${org_name} to channel ${CHANNEL_NAME}"
-    FABRIC_CFG_PATH="$PEERCFG_DIR" \
+    if FABRIC_CFG_PATH="$PEERCFG_DIR" \
     CORE_PEER_LOCALMSPID="$org_msp" \
     CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${org_name}/users/Admin/msp" \
     CORE_PEER_ADDRESS="localhost:${peer_port}" \
     CORE_PEER_TLS_ENABLED=true \
     CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${org_name}/peers/${peer_name}/tls/ca.pem" \
-      peer channel join -b "$GENESIS_BLOCK"
+      peer channel join -b "$GENESIS_BLOCK"; then
+      :
+    else
+      # wait_for_port only confirms the peer's TCP listener accepts
+      # connections, not that its TLS layer has finished initializing —
+      # confirmed live (2026-07-15) hitting "connection reset by peer" on
+      # the very first join attempt twice in a row, identical to the same
+      # race org-add.sh's join_new_org_to_channel already retries around.
+      # peer channel join has no retry/backoff of its own, so retry here.
+      local join_attempt=2
+      local join_succeeded="false"
+      while [ "$join_attempt" -le 5 ]; do
+        log "join attempt ${join_attempt}/5 for ${peer_name}.${org_name} (previous attempt hit a likely TLS-readiness race), retrying in 2s"
+        sleep 2
+        if FABRIC_CFG_PATH="$PEERCFG_DIR" \
+          CORE_PEER_LOCALMSPID="$org_msp" \
+          CORE_PEER_MSPCONFIGPATH="${CRYPTO_DIR}/organizations/${org_name}/users/Admin/msp" \
+          CORE_PEER_ADDRESS="localhost:${peer_port}" \
+          CORE_PEER_TLS_ENABLED=true \
+          CORE_PEER_TLS_ROOTCERT_FILE="${CRYPTO_DIR}/organizations/${org_name}/peers/${peer_name}/tls/ca.pem" \
+            peer channel join -b "$GENESIS_BLOCK"; then
+          join_succeeded="true"
+          break
+        fi
+        join_attempt=$((join_attempt + 1))
+      done
+      if [ "$join_succeeded" != "true" ]; then
+        echo "peer channel join failed for ${peer_name}.${org_name} after 5 attempts — this is no longer the known transient race, needs fresh diagnosis" >&2
+        exit 1
+      fi
+    fi
   done
 }
 
