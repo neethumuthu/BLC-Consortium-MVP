@@ -22,6 +22,44 @@ Entry format:
 
 ---
 
+## 2026-07-20 — chaincode commit failed with "requested sequence 2 is larger than the next available sequence number 1"
+
+**Phase:** 10 — RevokeCertificate implementation for `certificate-cc`,
+redeploying both chaincodes at a bumped version/sequence.
+**Symptom:** `./scripts/chaincode.sh deploy institution-cc` failed at the
+approve stage: `Error: proposal failed with status: 500 - failed to
+invoke backing implementation of 'ApproveChaincodeDefinitionForMyOrg':
+requested sequence 2 is larger than the next available sequence number
+1`.
+**Command / context:**
+    `CC_VERSION="1.1"` / `CC_SEQUENCE="2"` hardcoded in `chaincode.sh`/
+    `org-add.sh` (bumped from `1.0`/`1` to ship RevokeCertificate as an
+    upgrade of the already-deployed Monday network), then run against a
+    network that had just been fully wiped and rebuilt from scratch
+    (`network.sh down --wipe && network.sh up`) to recover from ~2 days
+    of container decay from the machine sleeping.
+**Root cause:** Fabric's chaincode lifecycle enforces sequence numbers
+strictly incrementing by exactly 1 from whatever's already committed on
+the channel — 0 for a chaincode name that's never been committed there.
+The "bump to 1.1/2" design was correct for upgrading the already-
+deployed 1.0/1 instance from Monday, but wiping the network reset that
+commit history to zero; the first-ever commit on a fresh channel must be
+sequence 1, regardless of what version label is used.
+**Resolution:** Changed `CC_SEQUENCE` back to `"1"` in both scripts
+(keeping `CC_VERSION="1.1"` as a meaningful label, since version strings
+aren't subject to Fabric's strict-increment rule the way sequence
+numbers are). Both `institution-cc` and `certificate-cc` then committed
+cleanly at 1.1/1 across all 3 active orgs.
+**Follow-up:** `CC_SEQUENCE` is not a value that can be picked once and
+left — it must match whatever the target channel's actual commit
+history is at deploy time, which depends on whether the network has
+been wiped since the last commit. Neither script currently reads the
+real current sequence from the channel automatically; this is a real
+gap if a future deploy targets a channel with different history than
+assumed.
+
+---
+
 ## 2026-07-14 — test-coverage audit found `GetAllInstitutions` and all 4 of `certificate-cc`'s functions had never been live-invoked
 
 **Phase:** 9 (post-closeout) — reviewing what had and hadn't actually

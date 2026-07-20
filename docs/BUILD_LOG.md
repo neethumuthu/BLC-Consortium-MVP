@@ -13,6 +13,20 @@ assertions were actually checked — e.g. "`InitLedger` confirmed via
 querycommitted; `RegisterInstitution` not re-verified" — not a blanket
 "confirmed clean." Precision of scope, not confidence of tone.
 
+**Convention (added 2026-07-14, after two real instances of stale-claim
+drift — the "restored to clean state" claim above, and a "per-institution
+certificate counter still pending Szymon" claim that was repeated across
+several turns before being caught, when `IssuerSequenceNumber` had
+already shipped in Phase 8):** before restating any "still open," "still
+pending," or "not yet done" item that hasn't been touched in several
+turns, re-verify it against the actual current code/state rather than
+repeating the earlier claim from memory. A status claim is only as good
+as the last time it was actually checked — long sessions make it easy to
+carry a stale claim forward unchallenged, since nothing forces a
+re-check unless something prompts one. Both instances so far were
+caught, but only because something external prompted the re-check, not
+because the drift was noticed proactively.
+
 ---
 
 ## Phase 1 — Repository skeleton
@@ -1958,3 +1972,83 @@ bug are logged as their own dated `docs/ERROR_LOG.md` entries, matching
 this project's standing discipline: a gap in test coverage is treated
 as seriously as a live failure, and closed the same way — with direct
 evidence, not assertion.
+
+---
+
+## Phase 10 — `RevokeCertificate` for `certificate-cc`
+
+**Goal:** implement certificate revocation, resolving the scope question
+left open since Phase 8 — confirmed in scope by Szymon on 2026-07-15
+("we still need to move forward with that").
+
+**Design decisions, confirmed with the user before writing any code**
+(not assumed, per this project's standing discipline):
+1. Only the certificate's original issuer (caller MSP ==
+   `certificate.IssuerID`) may revoke it — no governance vote, no other
+   institution allowed. Mirrors `IssueCertificate`'s existing unilateral
+   design; the multi-org endorsement policy is the trust mechanism, not
+   chaincode-level approval.
+2. `VerifyCertificate` gains a third result, `REVOKED`, alongside
+   `VALID`/`TAMPERED`. Priority: hash mismatch → `TAMPERED` (even if
+   also revoked) → else revoked → `REVOKED` → else `VALID`.
+3. `RevokeCertificate` requires a non-empty `reason` (stored permanently
+   as `RevokedReason`, alongside a `RevokedAt` timestamp) and errors on
+   an already-revoked certificate — no idempotent double-revoke, since
+   the goal is preserving the original reason/timestamp, not silently
+   accepting repeat calls.
+4. Both deploy scripts share one `CC_VERSION`/`CC_SEQUENCE` pair; ship
+   this by bumping the shared pair and redeploying BOTH chaincodes, even
+   though `institution-cc`'s own source is unchanged — matches how the
+   scripts already assume one shared version/sequence today.
+
+**Implementation:**
+- `chaincode/certificate-cc/model.go` — added `RevokedAt`/
+  `RevokedReason` fields (with the `metadata:"...,optional"` tag, same
+  requirement as `institution-cc`'s `ApprovedBy`/`ResolvedAt` precedent
+  — contractapi treats every struct field as required unless tagged
+  otherwise) and a new `verificationStatusRevoked = "REVOKED"` constant;
+  replaced the now-stale "not yet scoped" comment on
+  `certificateStatusRevoked`.
+- New file `chaincode/certificate-cc/revokecertificate.go` — the
+  `RevokeCertificate` function itself, mirroring `IssueCertificate`'s
+  shape (get caller MSP → load via `getCertificate` → validate → mutate
+  → `putCertificate`). Deliberately does NOT call
+  `requireActiveInstitution` — an institution that issued a certificate
+  while active, then later left/was suspended, must still be able to
+  revoke its own prior issuances.
+- `chaincode/certificate-cc/queries.go` — `VerifyCertificate` updated
+  with the TAMPERED → REVOKED → VALID priority order.
+- New `chaincode/certificate-cc/revokecertificate_test.go` (5 tests) and
+  2 new cases in `verifycertificate_test.go`, reusing the existing
+  `mocks_test.go` fakes with no new test infrastructure needed.
+
+**Bug found and fixed — hardcoded `CC_SEQUENCE="2"` failed on a freshly
+wiped channel.** Full detail in `docs/ERROR_LOG.md`'s 2026-07-20 entry:
+Fabric's strict per-channel sequence-increment rule meant the "bump to
+1.1/2" design (correct for upgrading the already-deployed Monday
+network) failed once the network was wiped and rebuilt from scratch for
+unrelated environment-health reasons (~2 days of container decay from
+the machine sleeping). Fixed by setting `CC_SEQUENCE="1"` to match this
+fresh channel's actual (zero) prior commit history, keeping
+`CC_VERSION="1.1"` as a version label.
+
+**Verification:**
+- `go test ./...` from `chaincode/certificate-cc` — all 22 tests pass
+  (15 pre-existing unchanged, 7 new: 5 `RevokeCertificate` + 2
+  `VerifyCertificate`).
+- Live end-to-end, real unedited terminal output confirmed for each
+  step: issued a certificate (`consortiumNumber:1`,
+  `issuerSequenceNumber:1`) → `VerifyCertificate` returned `VALID` → a
+  non-issuer's revoke attempt was rejected (`"InstitutionAMSP is not the
+  issuer of certificate ..."`) → the actual issuer (`BLCFounderMSP`)
+  revoked it with a reason → `VerifyCertificate` returned `REVOKED` with
+  `revokedReason`/`revokedAt` populated → a second revoke attempt on the
+  same certificate was rejected (`"certificate ... is already
+  revoked"`) → `GetCertificate` re-queried and confirmed the ORIGINAL
+  reason/timestamp was untouched, not overwritten by the rejected second
+  attempt.
+
+**Result:** Phase 10 exit condition met — `RevokeCertificate` is
+implemented, unit-tested, and proven working end-to-end against a real
+running 3-org network, with the confirmed authorization/priority/
+idempotency rules all directly observed, not assumed.
