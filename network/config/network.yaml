@@ -21,7 +21,7 @@ organizations:
     status: founding
   - name: InstitutionB
     msp: InstitutionBMSP
-    status: pending
+    status: member
 
 chaincode:
   packaging: classic
