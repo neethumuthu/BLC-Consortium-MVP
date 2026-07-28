@@ -42,6 +42,14 @@ class EnvironmentVariables {
   @Min(1)
   @Max(65535)
   HTTP_PORT!: number;
+
+  // Shared secret this instance expects on every request's
+  // Authorization: Bearer <API_KEY> header - see ApiKeyGuard. This is
+  // what closes ARCHITECTURE.md's "no HTTP auth" gap before any
+  // cloud/remote deployment.
+  @IsString()
+  @IsNotEmpty()
+  API_KEY!: string;
 }
 
 // Env vars this instance requires that must point at an existing

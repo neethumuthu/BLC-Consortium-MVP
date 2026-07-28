@@ -2166,3 +2166,242 @@ this grows further. Also: `RegisterInstitution`/`ProposeNewMember`/
 `CastVote`/`GetProposal` remain unexposed — revisit once/if
 `org-add.sh`'s stages get their own API-triggerable hooks (see this
 phase's endpoint-scope decision above).
+
+## Phase 12 — Certificate UI (Next.js frontend)
+
+**Goal:** build the first real product-quality UI for the consortium,
+following the 2026-07-24 team demo's feedback (Dominik: a terminal/
+Swagger-only demo reads poorly to anyone outside the team) and the
+2026-07-27 Szymon/Neethu sync's decision to shift full sprint focus to
+frontend now that the v1.0 backend is complete. `frontend/` had existed
+as an empty directory since project scaffolding but was never built.
+
+**Design decisions, confirmed with the user before writing any code:**
+1. Scope: login (cosmetic) → dashboard → issue/verify/view/revoke
+   certificates + read-only institutions list. Explicitly NOT
+   institution onboarding, NOT governance/voting UI, NOT real backend
+   auth this pass.
+2. Architecture: one shared, multi-tenant Next.js app (not one
+   deployment per institution) — matches the 2026-07-27 sync's Option 2
+   decision (see `docs/UI_PLAN_DRAFT.md`), reversing this doc's own
+   earlier draft recommendation of mirroring the backend 1:1.
+3. Stack: Next.js (TypeScript, App Router) + Tailwind + shadcn/ui
+   (chosen over hand-rolled Tailwind-only, for proven, accessible,
+   polished component patterns delivered fast).
+4. Layout: top navbar + separate pages per action (chosen over sidebar
+   or single-page/modal layout).
+5. Backend changes are allowed when they genuinely improve the product
+   (not a hard "UI-only" constraint) — concrete assessment for this
+   pass: none were needed. The existing 7 endpoints/DTOs, re-verified
+   against actual source before building, covered every in-scope
+   action cleanly.
+6. **Login is explicitly cosmetic, not real authentication** — a real-
+   looking username/password screen backed by a small hardcoded,
+   non-secret credential list (no user database, no password hashing,
+   no session/token infra), whose only job is picking which
+   institution's backend base URL a session talks to. Documented in
+   three places per the user's explicit instruction this must never be
+   mistaken for real auth later: a code comment in
+   `lib/institutions.ts`, `ARCHITECTURE.md`'s new decision #11, and
+   here.
+
+**Architecture:** all backend calls happen server-side, inside Next.js
+Server Components (reads) and Server Actions (writes) — the browser
+only ever talks to the Next.js app itself. Session is an httpOnly
+cookie storing only `institutionId`; every server-side call re-derives
+`baseUrl`/`displayName` from a static config (`lib/institutions.ts`),
+never trusting a client-supplied value. This kept the "no backend
+changes needed" conclusion true without any CORS work, since
+server-to-server calls aren't subject to browser CORS.
+
+**Grounded facts confirmed by direct inspection before building** (not
+assumed): re-verified all 7 endpoint routes/DTOs/env values directly
+against `backend/src/**` and `backend/.env.*` rather than trusting
+memory from Phase 11 — all matched exactly (ports 3001/3002/3003 for
+BLCFounder/InstitutionA/InstitutionB). Also discovered, via the bundled
+Next.js docs (`node_modules/next/dist/docs/`), that this project's
+pinned Next.js version (16.2.12) has real breaking changes from
+commonly-assumed conventions — see bugs below.
+
+**Bug found and fixed — Next.js 16 renamed `middleware.ts` to
+`proxy.ts`.** Same functionality, new file/export name
+(`export function proxy(...)`, not `middleware`) — confirmed against
+the bundled docs before writing the auth-gate file, not assumed from
+prior Next.js knowledge. Written directly as `proxy.ts` from the start
+once discovered; documented inline why the file isn't named
+`middleware.ts`.
+
+**Bug found and fixed — shadcn/ui's Base UI-based `Button` doesn't
+support `asChild`.** This project's shadcn/ui registry version composes
+via a `render` prop (`<Button render={<Link href="..." />}>`), not
+Radix's `asChild`/child-element pattern — caught by `tsc --noEmit`
+across three files (`empty-state.tsx`, dashboard `page.tsx`,
+certificate detail `page.tsx`) before ever reaching the browser.
+
+**Bug found and fixed — Base UI console error composing `Button` with a
+non-`<button>` `render` target.** Every `Button` composed as a `<Link>`
+logged `"A component that acts as a button expected a native <button>
+... Use nativeButton to false"` at runtime (visible as the Next.js dev
+overlay's "1 Issue" badge, not just a console line) — fixed by adding
+`nativeButton={false}` to all three affected `Button` usages. Caught
+during live browser verification, not just a build check, since
+`tsc`/`eslint` had no way to catch a runtime-only console warning.
+
+**Bug found and fixed — `setState` synchronously inside a `useEffect`
+in the revoke dialog.** The initial `RevokeSection` implementation used
+`useActionState` + a `useEffect` watching `state.success` to close the
+dialog and toast — `eslint`'s `react-hooks/set-state-in-effect` rule
+(new/stricter in this React 19 toolchain) flagged this as a real error,
+not a style nit: the recommended fix was to stop syncing external
+Server Action state via an effect at all. Rewrote `RevokeSection` to
+call the Server Action directly from a `useTransition`-wrapped click
+handler (manually constructing `FormData`) instead of wiring it through
+`<form action=...>` + `useActionState` — avoids the effect entirely, at
+the cost of that one dialog no longer degrading gracefully without JS
+(acceptable, since opening a confirmation dialog already requires JS).
+
+**Verification:** live end-to-end against the real running 3-org
+network (network + both backend instances rebuilt fresh this session
+after being found completely down), driven by a headless Chromium via
+Playwright rather than just `tsc`/`build` passing:
+- Login as BLCFounder → dashboard correctly lists only that
+  institution's real certificates.
+- Issued a real certificate through the form → correct
+  `consortiumNumber`/`issuerSequenceNumber` continuing the real ledger
+  sequence (not reset to 1), success toast, redirect to detail page.
+- "Run full verification" → correctly showed `VALID`.
+- Logged out, logged in as InstitutionA, navigated directly (by URL) to
+  BLCFounder's certificate → **Revoke button correctly absent from the
+  DOM entirely**, not just disabled — confirmed both immediately and
+  after a hard page reload.
+- Logged back in as BLCFounder, revoked the certificate with a reason
+  via the confirmation dialog → correctly showed `REVOKED` with the
+  reason and timestamp, confirmed via a fresh full-page reload (not
+  just the transitional post-action DOM state, which briefly showed
+  ambiguous text due to Server Action revalidation timing — a test
+  artifact, not an app bug).
+- A second revoke attempt was correctly blocked (button no longer
+  offered, matching the already-revoked state).
+- Institutions page correctly listed both real consortium members by
+  display name, no raw MSP IDs shown.
+- Zero browser console errors/warnings in the final run (after the
+  `nativeButton` fix above) — checked explicitly, not assumed from a
+  clean build alone.
+
+**Result:** Phase 12 exit condition met — the full in-scope certificate
+lifecycle UI is built, passes `tsc --noEmit`/`eslint`/`next build`
+cleanly, and is proven working end-to-end in a real browser against the
+live network, including the cross-org enforcement UI-gating that was
+this phase's central trust-model requirement. Login is real-looking but
+correctly non-authoritative, documented as such in three places.
+
+**Follow-up:** no reusable browser-driven verification setup existed yet
+for this frontend (a one-off Playwright script was hand-written this
+phase) — worth turning it into a proper reusable script/harness
+(dev-server-start, headless Chromium install, login helper) before the
+next frontend-touching phase, so this setup doesn't need rediscovering.
+No automated tests (unit or e2e) were added for the frontend itself,
+matching the backend's same still-open gap from Phase 11.
+Governance/voting UI and institution-onboarding UI remain explicitly
+out of scope, per this phase's design decisions.
+
+---
+
+## Phase 13 — Backend API key + signed session cookie
+
+**Goal:** close `ARCHITECTURE.md`'s Key decision #10 gap (no HTTP auth
+on the backend) before cloud deployment, following a 2026-07-28 Slack
+thread where Dominik and Neethu confirmed Azure/AKS deployment is now
+the concrete next phase once the UI is done — no longer a hypothetical
+future consideration.
+
+**Design decisions, confirmed with the user before writing any code:**
+1. Backend protection: a **shared API key per instance** (env var,
+   checked via a global Nest guard), not a JWT-issuing login endpoint —
+   fully closes the "zero-credential network-reachable caller" gap
+   with far less new infrastructure, and matches the existing
+   one-instance-per-institution architecture exactly.
+2. Frontend login passwords: considered bcrypt-hashing them as part of
+   "real auth," then **explicitly reverted** after review — the
+   credential "store" here is the source file itself, so hashing
+   wouldn't reduce any actual risk over the already-cosmetic plaintext
+   comparison; kept scope to what was actually decided rather than
+   applying a best-practice reflex that didn't address a real threat.
+3. Frontend session cookie: **signing was kept, not reverted** — unlike
+   password hashing, this closes a real, specific, and independently
+   confirmed threat: the cookie previously stored a bare institutionId
+   string with no signature, so any request could set
+   `Cookie: blc_session=BLCFounderMSP` directly (institution IDs aren't
+   secret) and obtain a full session with zero login. Because
+   `getSession()` looks up that institution's real API key purely from
+   the cookie's claimed institutionId, this was a genuine full
+   authentication bypass into real, API-key-authenticated backend
+   calls — not theoretical, and not the same category of "fix" as the
+   password hashing that was rejected.
+
+**Implementation:**
+- Backend: `API_KEY` added to `env.validation.ts` (same
+  `class-validator` pattern as existing fields); new
+  `ApiKeyGuard` (`backend/src/common/guards/api-key.guard.ts`) checks
+  `Authorization: Bearer <API_KEY>`, registered globally in `main.ts`
+  via `app.useGlobalGuards()` so every route requires it by default. A
+  real random key generated per instance, added to all three
+  `.env.*` files (never committed) and `.env.example` (placeholder).
+- Frontend: `lib/backend.ts`'s single `backendFetch()` choke point now
+  sends the `Authorization` header on every backend call. `lib/
+  institutions.ts` reads each instance's matching API key from
+  `process.env` (a real secret, unlike the intentionally-plaintext
+  cosmetic password) via a new `frontend/.env.local` (gitignored, with
+  a committed `.env.local.example` documenting the required vars).
+  `lib/session.ts` rewritten to sign an expiring JWT (`jose`, chosen
+  specifically for Edge-runtime compatibility) into the cookie instead
+  of a bare institutionId string; `getSession()` verifies signature and
+  expiry, returning `undefined` on any failure rather than trusting the
+  claim; `requireSession()` now calls `redirect("/login")` instead of
+  throwing when `getSession()` fails, since an invalid session is now a
+  real reachable case, not the "should be unreachable" theoretical one
+  the old comment assumed.
+
+**Bug found and fixed — invalid session cookie caused an infinite
+redirect loop.** Full detail in `docs/ERROR_LOG.md`'s 2026-07-28 entry:
+`proxy.ts`'s original cookie-*presence*-only check (previously correct,
+since sessions couldn't be present-but-invalid) created a redirect loop
+once forged/tampered cookies became possible — `/` saw the cookie as
+present and passed the request through to `requireSession()`, which
+correctly redirected to `/login`, but `/login` then saw the same
+still-present invalid cookie and redirected straight back. Fixed by
+having `proxy.ts` actually verify the JWT (not just check presence) and
+clear the cookie on any verification failure, in both redirect
+directions.
+
+**Verification:** live end-to-end against the real running 3-org
+network and all three rebuilt/restarted backend instances, driven by a
+headless-browser script:
+- `curl` with no `Authorization` header, and with a wrong key, both
+  correctly returned `401`; the correct key returned `200` — confirmed
+  directly against the backend, before involving the frontend at all.
+- Full certificate lifecycle (login → issue → verify) still works
+  exactly as before, now flowing transparently through the
+  API-key-authenticated calls.
+- Setting the old bare-institutionId cookie format directly (simulating
+  the pre-signing forgery) correctly redirects to `/login` — confirmed
+  via a real browser navigation and screenshot, not just an assumption
+  from the code.
+- A real session cookie with one character manually flipped (simulating
+  tampering) was also correctly rejected and redirected to `/login`,
+  confirming the signature check itself works, not just the
+  missing-cookie case.
+- Zero console errors across the full run.
+
+**Result:** Phase 13 exit condition met — `ARCHITECTURE.md`'s Key
+decision #10 is now implemented, not just documented as a prerequisite;
+the newly-found session-forgery gap is closed and proven closed, not
+just patched and assumed; and the scope stayed disciplined (password
+hashing rejected on review as not addressing a real threat here, rather
+than being added reflexively).
+
+**Follow-up:** still institution-level identity only — no
+per-human-user accounts, no token revocation, no rate-limiting on
+login attempts. TLS/HTTPS termination and cloud secrets-manager (e.g.
+Azure Key Vault) integration remain deployment-time concerns, not
+addressed by this phase.

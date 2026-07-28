@@ -22,6 +22,193 @@ Entry format:
 
 ---
 
+## 2026-07-28 — Peer's in-memory state cache doesn't see out-of-band CouchDB writes
+
+**Phase:** 13 (verification) — proving `VerifyCertificate`'s TAMPERED
+detection against the real ledger, not just a frontend mock.
+**Symptom:** directly mutating a certificate's `holderName` in CouchDB
+(bypassing chaincode entirely, to simulate real tampering) — confirmed
+via a direct CouchDB `GET` to genuinely persist the change, on **both**
+of `BLCFounder`'s peers — still returned `VALID` with the *original*
+`holderName` when queried through the real `GET /certificates/:id/
+verification` endpoint, repeatedly, across both peers.
+**Command / context:** a disposable test certificate
+(`512f7249...4df5ec41`, holder name "TAMPER TEST - DISPOSABLE - DELETE
+ME") issued specifically for this test; its CouchDB document edited
+directly via CouchDB's HTTP API on both `couchdb.peer0.BLCFounder`
+(port 5984) and `couchdb.peer1.BLCFounder` (port 5994) — ruling out
+Fabric Gateway's read-query routing (evaluate calls aren't guaranteed
+to hit the exact peer your client connected to) as the explanation,
+since both peers' underlying CouchDB documents were confirmed mutated
+yet the query still returned the stale value from either.
+**Root cause:** the peer's own `core.yaml` (the container's bundled
+default, not this project's host-side vendored copy at
+`network/peercfg/core.yaml`, which only matters for the host `peer`
+CLI) enables an in-memory state cache for CouchDB reads by default.
+That cache is refreshed when the peer commits a new block through the
+normal consensus/commit pipeline — it has no way to know a document
+changed via a direct, out-of-band CouchDB write, so it kept serving the
+last value it loaded through normal transaction processing,
+indefinitely, regardless of what CouchDB's current revision actually
+held.
+**Resolution:** restarting the affected peer containers
+(`docker restart peer0.BLCFounder peer1.BLCFounder`) forces a fresh
+state reload, after which the query correctly returned `TAMPERED` with
+the mutated `holderName`. Confirmed the inverse too: after reverting
+the CouchDB documents back to their original values, the peers had to
+be restarted *again* before the query returned `VALID` again — the
+revert alone was not sufficient; the stale in-memory value from the
+tampered load persisted through the revert exactly as expected, once
+the mechanism was understood.
+**Follow-up:** this generalizes beyond this one test. **Any** future
+direct-database intervention on a live peer — a data-migration script,
+a manual hotfix, disaster recovery, etc. — that writes to CouchDB
+outside the normal transaction/commit path will hit this same
+stale-read problem until the affected peer(s) are restarted. Worth
+remembering as a standing fact about this system's architecture, not
+just a quirk of this one test.
+
+---
+
+## 2026-07-28 — Invalid session cookie caused an infinite redirect loop
+
+**Phase:** 13 — Backend API key + signed session cookie.
+**Symptom:** navigating to `/` with a present-but-invalid `blc_session`
+cookie (forged, or manually tampered) never resolved — Playwright's
+`page.goto` failed with `net::ERR_TOO_MANY_REDIRECTS`, confirmed live
+via a headless-browser script, not assumed.
+**Command / context:** testing the new signed-JWT session (added to
+close a real forgeability gap — see this same phase's `BUILD_LOG.md`
+entry) by setting `Cookie: blc_session=BLCFounderMSP` (the old,
+pre-signing bare-string format) directly and navigating to `/`.
+**Root cause:** `proxy.ts` only checked cookie *presence*
+(`Boolean(cookie?.value)`), not validity — a deliberate, previously
+correct design (`getSession()`/`requireSession()` in `lib/session.ts`
+were the real authorization boundary). Once sessions could be
+present-but-invalid, this became insufficient: at `/`, `proxy.ts` saw
+`hasSession=true` and passed the request through; the page then called
+`requireSession()`, which correctly failed verification and redirected
+to `/login` — but the invalid cookie was never cleared, so at
+`/login`, `proxy.ts` saw `hasSession=true` again and redirected *back*
+to `/`, looping forever.
+**Resolution:** rewrote `proxy.ts` to actually verify the JWT (via
+`jose`'s `jwtVerify`, which works in Edge middleware — the reason
+`jose` was chosen over Node-only JWT libraries) instead of just
+checking presence, and to clear the cookie on the response whenever
+verification fails, in both directions (redirecting to `/login`, and
+staying on `/login`). This fully closes the loop rather than working
+around one symptom of it.
+**Follow-up:** none — `lib/session.ts`'s `requireSession()` still
+independently verifies and redirects too, matching Next's own guidance
+not to rely on middleware alone; that duplication is intentional
+defense-in-depth, not redundant code to remove.
+
+---
+
+## 2026-07-27 — `setState` called synchronously inside a `useEffect`, flagged by `eslint`
+
+**Phase:** 12 — Certificate UI, revoke confirmation dialog.
+**Symptom:** `npm run lint` failed: `react-hooks/set-state-in-effect`
+error on `setOpen(false)` inside a `useEffect` watching
+`useActionState`'s returned `state.success`, in
+`certificates/[id]/revoke-section.tsx`.
+**Command / context:**
+    ```tsx
+    const [state, formAction] = useActionState(revokeCertificateAction, {});
+    useEffect(() => {
+      if (state.success) { toast.success(...); setOpen(false); }
+    }, [state.success]);
+    ```
+**Root cause:** this React 19 toolchain's `eslint-plugin-react-hooks`
+now treats calling `setState` synchronously inside an effect body as an
+error, not a style nit — effects are meant to synchronize with external
+systems, not react to a Server Action's returned state by triggering
+more renders.
+**Resolution:** dropped `useActionState`/`useEffect` for this one
+dialog entirely. Rewrote it to call the Server Action directly as a
+plain async function from a `useTransition`-wrapped click handler,
+manually constructing `FormData` from controlled `useState` fields —
+`setOpen(false)`/toast now happen directly in that handler's own
+`await` continuation, never inside an effect.
+**Follow-up:** this dialog no longer degrades gracefully without
+JavaScript (a plain `<form action={...}>` would); accepted, since
+opening a confirmation dialog already requires JS regardless.
+
+---
+
+## 2026-07-27 — Base UI console error: "component that acts as a button expected a native `<button>`"
+
+**Phase:** 12 — Certificate UI, every `Button` composed as a link.
+**Symptom:** every page with a `Button` rendered as a `<Link>` (e.g.
+"Issue Certificate", "Run full verification") logged a console error at
+runtime and showed a "1 Issue" badge in the Next.js dev overlay — not
+caught by `tsc`/`eslint`, only visible during live browser verification.
+**Command / context:**
+    `<Button render={<Link href="/certificates/new" />}>...</Button>`
+**Root cause:** this shadcn/ui registry's `Button` is built on
+`@base-ui/react/button`, which defaults `nativeButton: true` (it expects
+its `render` target to itself be a real `<button>` for correct
+keyboard/ARIA semantics). Composing it with `<Link>` (which renders an
+`<a>`) violates that assumption unless declared explicitly.
+**Resolution:** added `nativeButton={false}` to every `Button` composed
+with a non-`<button>` `render` target (3 files:
+`components/empty-state.tsx`, `app/(dashboard)/page.tsx`,
+`app/(dashboard)/certificates/[id]/page.tsx`).
+**Follow-up:** worth grepping for `render={<Link` before adding any new
+`Button`-as-link composition and setting `nativeButton={false}`
+up front, rather than discovering the console error after the fact.
+
+---
+
+## 2026-07-27 — shadcn/ui `Button`/`Card` etc. don't support `asChild`
+
+**Phase:** 12 — Certificate UI, initial page-composition pass.
+**Symptom:** `tsc --noEmit` failed in 3 files: `Property 'asChild' does
+not exist on type '... ButtonProps ...'`.
+**Command / context:**
+    ```tsx
+    <Button asChild><Link href="/certificates/new">...</Link></Button>
+    ```
+**Root cause:** this project's shadcn/ui registry version is built on
+`@base-ui/react`, not Radix UI — Radix's `asChild`/child-element
+composition pattern doesn't exist here. Composition instead uses a
+`render` prop that takes a `ReactElement` directly.
+**Resolution:** rewrote every `asChild` usage as
+`<Button render={<Link href="..." />}>{children}</Button>` (children
+stay on the outer `Button`, not nested inside the `render` element).
+See the following entry for a second bug this same pattern surfaced.
+**Follow-up:** none of this project's other shadcn component usages
+(`AlertDialogCancel`, etc.) needed this fix, since they were generated
+already using the correct `render` pattern internally — only my own
+hand-written `Button`+`Link` compositions were affected.
+
+---
+
+## 2026-07-27 — Next.js 16 renamed `middleware.ts` to `proxy.ts`
+
+**Phase:** 12 — Certificate UI, auth gate.
+**Symptom:** none yet hit at runtime — caught proactively by checking
+the framework's own bundled docs before writing the file, rather than
+assuming the file convention was unchanged from earlier Next.js
+versions.
+**Command / context:** about to write `src/middleware.ts` with
+`export function middleware(request: NextRequest) {...}`.
+**Root cause:** as of Next.js 16.0.0, the `middleware.ts` file
+convention is deprecated and renamed to `proxy.ts` (same functionality,
+`export function proxy` instead of `middleware`) — confirmed against
+the bundled docs (`node_modules/next/dist/docs/.../proxy.md`), not
+assumed. This project is pinned to Next.js 16.2.12.
+**Resolution:** wrote the file directly as `src/proxy.ts` from the
+start, exporting `proxy` (not `middleware`), with a comment explaining
+the rename for future readers.
+**Follow-up:** worth checking `node_modules/next/dist/docs/` for other
+renamed/changed conventions (e.g. async `params`/`searchParams`,
+confirmed still Promise-based here and handled correctly) before
+assuming any Next.js API from general knowledge in this specific repo,
+given how new this pinned version is.
+
+---
+
 ## 2026-07-20 — TypeScript build failed: "'SubmitError' cannot be used as a value because it was exported using 'export type'"
 
 **Phase:** 11 — NestJS Fabric Gateway backend, global exception filter.

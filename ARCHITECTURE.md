@@ -215,20 +215,92 @@ blc/
    `blcgen doctor` (environment preflight). Both are cheap to add later and
    don't need to exist before the MVP works.
 
-10. **Backend has no HTTP-level authentication — an explicitly scoped
-    decision with a hard trigger, not an oversight.** The NestJS Gateway
-    service (2026-07-20) currently trusts every caller on its HTTP layer;
-    the only identity boundary is which org's Fabric signing key a given
-    running instance holds (one instance per org, per env-configured
-    identity — see `backend/`). This is valid *only* while the service
-    runs on localhost for screen-shared demos, confirmed explicitly with
-    the user rather than assumed. **Before any cloud or remote
-    deployment, adding HTTP auth (API-key or JWT) is a hard prerequisite
-    gate, not an optional hardening step** — the moment this backend
-    stops being localhost-only, any network-reachable caller could
-    invoke `IssueCertificate`/`RevokeCertificate` as any institution with
-    zero credential, since the Fabric-identity trust boundary is
-    invisible to an HTTP caller.
+10. **Backend HTTP-level authentication (2026-07-28) — implemented, not
+    just a documented prerequisite anymore.** From 2026-07-20 through
+    2026-07-27, the NestJS Gateway trusted every HTTP caller, with the
+    only identity boundary being which org's Fabric signing key a given
+    running instance held — valid only for localhost-only,
+    screen-shared demos, per this decision's original wording. Cloud
+    deployment (Azure/AKS) became a concrete near-term plan on
+    2026-07-28, which made that prerequisite immediately actionable
+    rather than hypothetical. **Implemented: a shared API key per
+    instance** (`API_KEY` env var, `backend/src/common/guards/
+    api-key.guard.ts`, applied globally in `main.ts` via
+    `app.useGlobalGuards`) — every route now requires
+    `Authorization: Bearer <API_KEY>`, or rejects with `401`. This
+    closes the original gap: a network-reachable caller with no key can
+    no longer invoke `IssueCertificate`/`RevokeCertificate` as any
+    institution. **What this does not add:** per-human-user accounts,
+    token expiry/revocation, or rate-limiting — this is still
+    institution-level identity only (one key per instance, matching the
+    one-Fabric-identity-per-instance model), not a full user-auth
+    system. TLS/HTTPS termination and cloud secrets-manager (e.g. Azure
+    Key Vault) integration remain deployment-time concerns, not covered
+    by this decision.
+
+11. **The frontend's login screen (2026-07-27) is cosmetic — a UI-only
+    routing gate, not a substitute for decision #10's backend
+    protection.** `frontend/` is a single Next.js app with a
+    real-looking username/password login
+    (`frontend/src/lib/institutions.ts`), passwords deliberately kept as
+    plain strings, not hashed — hashing would protect against a
+    credential-store leak separate from the source code, but here the
+    "store" IS the source file, so hashing wouldn't reduce any actual
+    risk (considered and explicitly rejected as scope creep on
+    2026-07-28). As of 2026-07-28, the session cookie IS a signed,
+    expiring JWT (`frontend/src/lib/session.ts`, via `jose`) rather than
+    a bare institution-ID string — that part closes a real, specific
+    forgeability gap found during that review: previously, any request
+    could set `Cookie: blc_session=BLCFounderMSP` directly (institution
+    IDs aren't secret) and obtain a full session with zero login, since
+    `httpOnly` only stops JavaScript from reading/editing a cookie, not
+    a request crafted outside the browser. Because `getSession()` looks
+    up that institution's *real* API key server-side purely from the
+    cookie's claimed institutionId, a forged cookie would have let
+    someone make real, API-key-authenticated backend calls as any
+    institution with zero password — a genuine auth bypass, not
+    theoretical, which is why this one was fixed and hashing wasn't.
+    **Still true, unchanged:** there is no user database (one fixed
+    account per institution) and this login itself is not what protects
+    the backend API — that's decision #10's API key, sent by
+    `frontend/src/lib/backend.ts` on every request. This is documented
+    here, in `frontend/src/lib/institutions.ts`, and in
+    `docs/BUILD_LOG.md` so the login's cosmetic role is never mistaken
+    for the actual security boundary.
+
+12. **A full network wipe restores infrastructure membership but NOT
+    ledger membership for non-founding institutions — a standing gap,
+    not a one-off InstitutionB fix.** This system splits organization
+    "membership" across two independent layers, and `network.sh down
+    --wipe && up` only rebuilds one of them:
+    - **Fabric/infrastructure layer** (crypto, peers, CouchDB, channel
+      join, chaincode install): driven entirely by `network.yaml`'s
+      `organizations[].status` field. Any org with status `founding` OR
+      `member` gets fully bootstrapped by a fresh `network.sh up` /
+      `chaincode.sh deploy`, with no distinction between the two
+      statuses at this layer.
+    - **`institution-cc` ledger layer** (whether `GetAllInstitutions`
+      actually lists the org as an active institution): `InitLedger`
+      only registers `founding` orgs as eligible voters — it does not
+      create `Institution` records for anyone. `RegisterInstitution`
+      explicitly rejects non-founding callers. The **only** code path
+      that creates a non-founding org's `Institution` ledger record is
+      `CastVote` reaching approval threshold (`governance.go`).
+    **Consequence:** after any full wipe, an org already listed as a
+    real `member` in `network.yaml` (not a rehearsal artifact left over
+    from a prior demo — see decision-adjacent `docs/ERROR_LOG.md`
+    entries on that separate, already-known gotcha) will have its
+    infrastructure silently restored looking completely healthy
+    (containers up, chaincode installed, channel joined) while being
+    **absent from `GetAllInstitutions`** until its onboarding governance
+    ceremony — `ProposeNewMember` then enough `CastVote` approvals — is
+    manually redone. `org-add.sh` itself is not what's needed here
+    (that would try to redo already-complete infrastructure work); only
+    the two chaincode governance calls are. This applies to *any*
+    current or future non-founding member, not just `InstitutionB` —
+    check `GetAllInstitutions` after every full wipe before assuming a
+    rebuilt network's application state matches its infrastructure
+    state.
 
 ## Implementation order
 
