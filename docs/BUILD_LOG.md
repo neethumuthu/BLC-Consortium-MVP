@@ -2405,3 +2405,126 @@ per-human-user accounts, no token revocation, no rate-limiting on
 login attempts. TLS/HTTPS termination and cloud secrets-manager (e.g.
 Azure Key Vault) integration remain deployment-time concerns, not
 addressed by this phase.
+
+---
+
+## Phase 14 — Full UI regression pass before sign-off
+
+**Goal:** exhaustively test the frontend against a comprehensive
+test-case list (login, dashboard, issue, detail, verify, revoke,
+institutions, cross-org behavior, session security, error handling,
+navigation, responsive layout) before declaring the certificate UI
+complete — not just re-confirming the happy paths already proven in
+Phases 12-13.
+
+**Context:** before testing could start, the network was found in the
+same recurring host-instability state documented multiple times this
+project (CA/CouchDB/one orderer dead ~13h earlier, likely a host
+sleep/restart) — full wipe, rebuild, redeploy, founder re-registration,
+and re-onboarding `InstitutionB` via propose+vote (hit and recovered
+from the usual MVCC race on the first vote, consistent with prior
+occurrences). Both backend and frontend processes had also died and
+needed restarting. This is now a well-understood, quickly-recoverable
+class of issue, not a new problem.
+
+**Testing approach:** a comprehensive Playwright script covering ~30
+distinct test cases across every area of the app, run against the real
+network/backend/frontend (not mocked), plus targeted manual scripts for
+cases needing special setup (temporarily shortened JWT expiry, killing
+a backend instance mid-test, direct cookie manipulation).
+
+**Bug found and fixed — nav bar had no responsive/mobile layout at
+all.** At a 390px viewport width, the top nav bar's links and
+institution-name/logout controls rendered in one fixed horizontal row
+with no wrapping or collapsing, forcing the *entire page* into
+horizontal overflow — a real violation of "the page body must never
+scroll horizontally." Fixed by adding a `md:hidden` / `hidden md:flex`
+breakpoint split: nav links and logout collapse behind a hamburger
+button below `md`, expanding into a stacked dropdown panel on tap, with
+the existing desktop layout unchanged above `md`. Confirmed via
+`document.documentElement.scrollWidth <= clientWidth` (no overflow) and
+that the mobile menu's links are clickable and navigate correctly.
+
+**Bug found in my own test script, not the app — during triage of a
+different suspected failure, a leftover `button:has-text("")` "no-op
+guard" selector (which trivially matches almost any button) clicked the
+nav bar's Logout button instead of doing nothing, since `NavBar` renders
+earlier in the DOM than the certificate detail page's own buttons. This
+silently broke the session for every check after it in that run,
+producing a misleading downstream test failure. Removed the bogus
+selector; no app code was at fault.
+
+**Investigated, concluded not a bug — certificate table appears to lose
+its Status/Issued columns on narrow viewports.** `certificate-
+table.tsx` wraps shadcn's `Table` component (which already provides its
+own `overflow-x-auto` scroll container, `ui/table.tsx`) in a second,
+redundant `overflow-x-auto` div. Measuring `.overflow-x-auto` by class
+name alone is ambiguous with this double-nesting and returns the wrong
+(outer, non-scrolling) element - confirmed via `[data-slot="table-
+container"]` (the correct, inner element) that the real scroll
+container genuinely does overflow (571px content in a 340px viewport)
+and genuinely does scroll correctly when its `scrollLeft` is set, moving
+the "Status" header fully into view. The double-wrapper was still
+cleaned up (changed to `overflow-hidden rounded-lg border`, since the
+outer div's only real job is clipping the inner scroll content to the
+rounded corners, not scrolling itself) to remove the redundant/
+misleading code, but the underlying scroll behavior was never actually
+broken. **Flagged, not fixed:** there's no visual affordance (scrollbar,
+edge fade) hinting that the table is horizontally scrollable on narrow
+viewports — a discoverability polish item, not a functional bug.
+
+**Found and fixed a stale code comment** (unrelated to any test
+failure): `lib/session.ts`'s `requireSession()` still had a comment from
+before the 2026-07-28 `proxy.ts` fix describing it as "the real
+authorization boundary" because "`proxy.ts` only checks cookie
+presence" — no longer true since that same day's redirect-loop fix made
+`proxy.ts` verify the JWT too. Corrected the comment to describe the
+current, accurate relationship (both verify independently; the
+duplication is intentional defense-in-depth, not because one is
+"shallow").
+
+**Verification, all against the real running system:**
+- Login: wrong password, unknown email, empty-form submission, and
+  browser-back-after-logout all correctly rejected/blocked.
+- Dashboard: genuine empty state confirmed on an institution
+  (`InstitutionB`) with zero certificates; row-click navigation works.
+- Issue: missing holder name/details both block submission; the
+  metadata field-builder correctly handles multiple fields, a removed
+  field, zero fields (metadata section omitted entirely), and a
+  blank-key row (silently dropped, not sent).
+- Certificate detail: copy-to-clipboard genuinely copies the correct
+  certificate ID (verified via the real clipboard API, not assumed);
+  an invalid certificate ID shows the friendly not-found message.
+- Verify: nonexistent certificate ID shows the same friendly message.
+- Revoke: Cancel button closes the dialog without revoking.
+- Institutions: joined dates render as formatted dates, not raw ISO
+  timestamps.
+- Cross-org: `InstitutionA` can successfully verify a certificate
+  issued by `BLCFounder` (verification is genuinely caller-agnostic,
+  not just assumed from the chaincode's own "Caller: Anyone" doc
+  comment).
+- Session security: an expired JWT (tested by temporarily setting
+  `SESSION_TTL` to `2s`, confirming rejection, then reverting to `8h`
+  and confirming a normal session still persists) and logout's
+  server-side cookie clearing (confirmed via the real cookie jar, not
+  just the redirect) both behave correctly.
+- Error handling: killing `InstitutionB`'s backend instance mid-test
+  produced the exact intended copy ("Unable to reach Institution B's
+  system right now..."), not a crash; a battery of malformed
+  certificate IDs (path-traversal-style, a raw `<script>` tag, a
+  500-character string) all rendered the same clean not-found state
+  with no XSS execution and zero console errors.
+- Navigation: every nav link (including the new mobile menu) verified
+  working from a cold click-through, not assumed from earlier runs.
+
+**Result:** Phase 14 exit condition met — every test case on the
+pre-agreed checklist passed, one real bug (responsive nav) found and
+fixed, one investigated-and-cleared false alarm (table scrolling), and
+one stale doc comment corrected. The UI is now verified end-to-end
+against its own real dependencies, not mocks, across both desktop and
+mobile viewports.
+
+**Follow-up:** the table-scroll discoverability gap (no visual hint
+that Status/Issued columns are reachable by scrolling on narrow
+screens) is a legitimate future polish item, deliberately left open
+rather than adding UI scope unprompted mid-regression-pass.

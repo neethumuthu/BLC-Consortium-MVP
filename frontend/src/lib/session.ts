@@ -60,11 +60,13 @@ export async function getSession(): Promise<InstitutionAccount | undefined> {
   }
 }
 
-// requireSession() is the real authorization boundary (see proxy.ts's
-// own comment: it only checks cookie *presence* as a cheap redirect
-// optimization, not a security check). A forged or expired cookie now
-// passes proxy.ts's shallow check and reaches here - that's expected
-// and handled by redirecting to /login, not throwing.
+// requireSession() re-verifies independently of proxy.ts (which also
+// verifies the JWT, not just cookie presence, since a 2026-07-28 fix -
+// see proxy.ts's own comment for why a presence-only check caused a
+// redirect loop). This duplication is intentional defense-in-depth
+// per Next's own guidance not to rely on middleware as the sole
+// authorization boundary - a forged or expired cookie must still be
+// rejected here even if proxy.ts's check were ever weakened again.
 export async function requireSession(): Promise<InstitutionAccount> {
   const session = await getSession();
   if (!session) {

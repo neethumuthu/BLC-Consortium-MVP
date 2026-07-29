@@ -20,7 +20,10 @@ export function CertificateTable({ certificates }: { certificates: Certificate[]
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    // Table already wraps itself in its own overflow-x-auto scroll
+    // container (ui/table.tsx) - this outer div only clips that
+    // scrolling content to the rounded border, it doesn't scroll itself.
+    <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>

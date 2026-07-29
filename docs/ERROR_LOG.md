@@ -22,6 +22,38 @@ Entry format:
 
 ---
 
+## 2026-07-29 — Nav bar had no responsive layout, caused page-wide horizontal overflow
+
+**Phase:** 14 — full UI regression pass, narrow-viewport check.
+**Symptom:** at a 390px (typical phone) viewport width, the whole page
+required horizontal scrolling — confirmed via
+`document.documentElement.scrollWidth > clientWidth` returning `true`,
+and visually via a full-page screenshot showing nav items pushed far
+off the right edge of the screen.
+**Command / context:** a Playwright script setting `viewport: {width:
+390, height: 844}` and screenshotting the dashboard and certificate
+detail pages — the first time this app had been checked at any
+viewport narrower than a standard desktop width.
+**Root cause:** `components/nav-bar.tsx` laid out the logo, all 4 nav
+links, the institution name, and the logout button in a single
+non-wrapping flex row with no responsive breakpoints at all - at
+desktop widths this fit comfortably, but at phone widths the row's
+natural content width (well over 600px) forced the entire `<header>`,
+and with it the whole page, wider than the viewport.
+**Resolution:** added a `md:` breakpoint split: the nav links and
+institution-name/logout controls are now `hidden md:flex` (desktop
+only), with a `md:hidden` hamburger button revealing a stacked dropdown
+panel containing the same links/controls below the `md` breakpoint.
+Confirmed via `scrollWidth <= clientWidth` at 390px afterward, and that
+every link in the new mobile menu still navigates correctly.
+**Follow-up:** no other pages/components were checked at narrow
+viewports before this pass; worth a similar spot-check if new pages are
+added, since this class of bug (correct on desktop, silently broken on
+mobile) produces no error of any kind - only a visual/UX failure that a
+desktop-only workflow would never surface.
+
+---
+
 ## 2026-07-28 — Peer's in-memory state cache doesn't see out-of-band CouchDB writes
 
 **Phase:** 13 (verification) — proving `VerifyCertificate`'s TAMPERED
