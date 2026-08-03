@@ -1,0 +1,61 @@
+# Keeps GitHub Projects stages in sync with the operating loop + Slack nudges
+name: project-sync
+on:
+  pull_request:
+    types: [opened, closed]
+  push:
+    branches: [main]
+    paths: ['openspec/changes/**']
+  schedule:
+    - cron: '0 9 * * *'        # daily nudge sweep
+
+env:
+  PROJECT_NUMBER: '2'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      repository-projects: write
+    steps:
+      # fetch-depth: 0 is required, not cosmetic — project-sync.sh diffs
+      # before..after on push events to tell "new change folder" apart from
+      # "modified" apart from "archived"; the default depth-1 checkout makes
+      # that diff impossible.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Stage transitions, driven by gh CLI:
+      #   change folder created on main        -> Stage: Propose
+      #   change folder modified (spec agreed) -> Stage: Apply   (set by Align reviewer)
+      #   PR opened referencing change-id      -> Stage: Verify
+      #   PR merged                            -> Stage: Compound
+      #   change archived                      -> Stage: Done
+      - name: Sync stages
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}   # PAT with project scope
+        run: |
+          # Template: adapt the item lookup to your issue<->change-id convention
+          # (issue body contains "Change-ID: <id>").
+          bash .github/scripts/project-sync.sh "$PROJECT_NUMBER" "${{ github.event_name }}"
+
+      # Nudge: merged >24h ago but change not archived => compound step pending
+      - name: Compound nudges
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PENDING=$(ls openspec/changes 2>/dev/null | grep -v archive | wc -l)
+          echo "pending_changes=$PENDING" >> "$GITHUB_ENV"
+
+      - uses: slackapi/slack-github-action@v2
+        if: github.event_name == 'schedule' && env.pending_changes != '0'
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_PIPELINE }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "${{ env.pending_changes }} change(s) still open in openspec/changes/ — check none are merged-but-not-compounded: ${{ github.server_url }}/${{ github.repository }}/tree/main/openspec/changes"
