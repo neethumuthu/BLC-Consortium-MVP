@@ -1,0 +1,49 @@
+# Nudges the PM on Slack when a change carries unresolved product questions.
+# Convention: any change blocked on a product decision lists it under a
+# "## Open questions" section in its proposal.md. Agents are instructed
+# (AGENTS.md) to add questions there instead of inventing product answers.
+# A change must not pass Align while this section is non-empty.
+name: requirements-nudge
+on:
+  push:
+    paths: ['openspec/changes/**']
+  schedule:
+    - cron: '0 8 * * 1-5'        # weekday morning re-nudge for stale questions
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find changes with open product questions
+        id: scan
+        run: |
+          BLOCKED=""
+          for f in $(find openspec/changes -maxdepth 2 -name proposal.md -not -path '*/archive/*' 2>/dev/null); do
+            # non-empty content between "## Open questions" and the next heading?
+            CONTENT=$(awk '/^## Open questions/{flag=1;next}/^## /{flag=0}flag' "$f" | grep -v '^\s*$' || true)
+            if [ -n "$CONTENT" ]; then
+              BLOCKED="$BLOCKED\n• $(dirname "$f" | xargs basename) — ${{ github.server_url }}/${{ github.repository }}/blob/main/$f"
+            fi
+          done
+          if [ -n "$BLOCKED" ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            { echo "list<<EOF"; echo -e "$BLOCKED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Nudge PM on Slack
+        if: steps.scan.outputs.blocked == 'true'
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_PIPELINE }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "<@${{ vars.PM_SLACK_MEMBER_ID }}> these change(s) are blocked on product input — please refine the requirements (answer in the proposal, or reply here and the team will sweep it in):${{ steps.scan.outputs.list }}"
+
+      # Answers must land in the repo, not die in Slack: the PM either edits
+      # proposal.md directly (or comments on the linked issue and the developer
+      # runs @claude to merge the answer into the proposal). The daily 🔨 sweep
+      # is the backstop for answers given in Slack threads.
