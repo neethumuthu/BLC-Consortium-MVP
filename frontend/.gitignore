@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.local.example
 
+# runtime-rotated credential overrides — see lib/credential-override-store.ts
+credential-overrides.json
+
 # vercel
 .vercel
 

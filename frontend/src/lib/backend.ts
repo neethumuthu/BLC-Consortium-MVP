@@ -1,5 +1,6 @@
 import "server-only";
 import { findByInstitutionId } from "./institutions";
+import { getCredentialOverride } from "./credential-override-store";
 
 export class BackendError extends Error {
   constructor(
@@ -24,13 +25,15 @@ export async function backendFetch<T>(institutionId: string, path: string, init?
     throw new Error(`Unknown institution: ${institutionId}`);
   }
 
+  const apiKey = getCredentialOverride(institutionId) ?? account.apiKey;
+
   let res: Response;
   try {
     res = await fetch(`${account.baseUrl}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${account.apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
         ...init?.headers,
       },
       cache: "no-store",

@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/certificates/verify", label: "Verify Certificate" },
   { href: "/institutions", label: "Institutions" },
   { href: "/governance", label: "Governance" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function NavBar({ displayName }: { displayName: string }) {

@@ -4,6 +4,7 @@ import { validate } from './config/env.validation';
 import { FabricGatewayModule } from './fabric-gateway/fabric-gateway.module';
 import { InstitutionsModule } from './institutions/institutions.module';
 import { CertificatesModule } from './certificates/certificates.module';
+import { AuthModule } from './auth/auth.module';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 
 @Module({
@@ -14,6 +15,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
       validate,
     }),
     FabricGatewayModule,
+    AuthModule,
     InstitutionsModule,
     CertificatesModule,
   ],
