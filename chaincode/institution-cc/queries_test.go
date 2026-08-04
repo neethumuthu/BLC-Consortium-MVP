@@ -97,6 +97,50 @@ func TestGetProposal_ReturnsExisting(t *testing.T) {
 	}
 }
 
+func TestGetOpenProposals_ReturnsOnlyOpenOnes(t *testing.T) {
+	ledger := setupActiveFounders(t)
+
+	injectProposal(t, ledger, &MembershipProposal{
+		ProposalID: "p-open", ApplicantID: "InstitutionBMSP", ApplicantName: "Institution B",
+		ProposedBy: "BLCFounderMSP", Status: proposalStatusOpen, DocType: docTypeProposal,
+	})
+	injectProposal(t, ledger, &MembershipProposal{
+		ProposalID: "p-approved", ApplicantID: "InstitutionCMSP", ApplicantName: "Institution C",
+		ProposedBy: "BLCFounderMSP", Status: proposalStatusApproved, DocType: docTypeProposal,
+	})
+	injectProposal(t, ledger, &MembershipProposal{
+		ProposalID: "p-rejected", ApplicantID: "InstitutionDMSP", ApplicantName: "Institution D",
+		ProposedBy: "BLCFounderMSP", Status: proposalStatusRejected, DocType: docTypeProposal,
+	})
+
+	ctx, _ := newTx(ledger, "tx1", "n/a", time.Now())
+	contract := &SmartContract{}
+	proposals, err := contract.GetOpenProposals(ctx)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(proposals) != 1 {
+		t.Fatalf("expected 1 open proposal (approved/rejected excluded), got %d", len(proposals))
+	}
+	if proposals[0].ProposalID != "p-open" {
+		t.Fatalf("expected p-open, got %s", proposals[0].ProposalID)
+	}
+}
+
+func TestGetOpenProposals_EmptyLedgerReturnsEmptyNotError(t *testing.T) {
+	ledger := newFakeLedger()
+	ctx, _ := newTx(ledger, "tx1", "n/a", time.Now())
+	contract := &SmartContract{}
+
+	proposals, err := contract.GetOpenProposals(ctx)
+	if err != nil {
+		t.Fatalf("expected success on an empty ledger, got error: %v", err)
+	}
+	if len(proposals) != 0 {
+		t.Fatalf("expected 0 proposals, got %d", len(proposals))
+	}
+}
+
 func TestGetProposal_ErrorsOnMissing(t *testing.T) {
 	ledger := newFakeLedger()
 	contract := &SmartContract{}

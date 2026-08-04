@@ -31,3 +31,18 @@ export interface Institution {
   approvedBy?: string[];
   docType: string;
 }
+
+// Mirrors backend/src/institutions/dto/membership-proposal.dto.ts exactly.
+export interface MembershipProposal {
+  proposalId: string;
+  applicantId: string;
+  applicantName: string;
+  proposedBy: string;
+  status: "open" | "approved" | "rejected";
+  votesFor: number;
+  votesAgainst: number;
+  totalEligibleVoters: number;
+  createdAt: string;
+  resolvedAt?: string;
+  docType: string;
+}

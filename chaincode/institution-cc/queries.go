@@ -46,6 +46,33 @@ func (s *SmartContract) GetAllInstitutions(ctx contractapi.TransactionContextInt
 	return institutions, nil
 }
 
+// GetOpenProposals returns every membership proposal currently Open, via
+// a CouchDB rich query on docType and status — same pattern as
+// GetAllInstitutions. Lets a caller discover which proposals need a vote
+// without already knowing a proposal ID.
+func (s *SmartContract) GetOpenProposals(ctx contractapi.TransactionContextInterface) ([]*MembershipProposal, error) {
+	selector := fmt.Sprintf(`{"selector":{"docType":"%s","status":"%s"}}`, docTypeProposal, proposalStatusOpen)
+	iterator, err := ctx.GetStub().GetQueryResult(selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query open proposals: %v", err)
+	}
+	defer iterator.Close()
+
+	proposals := []*MembershipProposal{}
+	for iterator.HasNext() {
+		result, err := iterator.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate proposals: %v", err)
+		}
+		var proposal MembershipProposal
+		if err := json.Unmarshal(result.Value, &proposal); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal proposal: %v", err)
+		}
+		proposals = append(proposals, &proposal)
+	}
+	return proposals, nil
+}
+
 // GetProposal returns the membership proposal identified by proposalID.
 func (s *SmartContract) GetProposal(ctx contractapi.TransactionContextInterface, proposalID string) (*MembershipProposal, error) {
 	proposal, err := getProposal(ctx, proposalID)

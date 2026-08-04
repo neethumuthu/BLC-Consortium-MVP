@@ -27,6 +27,24 @@ export function humanizeBackendError(rawMessage: string): string {
   if (/is not an active institution|is not a registered institution/.test(message)) {
     return "That institution isn't an active member of the consortium.";
   }
+  if (/proposal .* does not exist/.test(message)) {
+    return "We couldn't find a proposal with that ID.";
+  }
+  if (/is already a member institution/.test(message)) {
+    return "That institution is already a member of the consortium.";
+  }
+  if (/open or already-approved membership proposal exists/.test(message)) {
+    return "There's already an open or approved proposal for that institution.";
+  }
+  if (/is the applicant and cannot vote on its own proposal/.test(message)) {
+    return "You can't vote on your own membership proposal.";
+  }
+  if (/has already voted on proposal/.test(message)) {
+    return "You've already voted on this proposal.";
+  }
+  if (/is not open \(status:/.test(message)) {
+    return "This proposal is no longer open for voting.";
+  }
 
   return withDisplayNames(message);
 }

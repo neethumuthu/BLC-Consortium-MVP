@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { FabricGatewayService } from '../fabric-gateway/fabric-gateway.service';
 import { InstitutionDto } from './dto/institution.dto';
+import { MembershipProposalDto } from './dto/membership-proposal.dto';
+import { ProposeMemberDto } from './dto/propose-member.dto';
 
 const utf8Decoder = new TextDecoder();
 
@@ -21,5 +23,35 @@ export class InstitutionsService {
     // []*Institution{}, never nil - an empty result always
     // deserializes as [], no null-handling needed here.
     return JSON.parse(utf8Decoder.decode(result)) as InstitutionDto[];
+  }
+
+  async proposeNewMember(dto: ProposeMemberDto): Promise<MembershipProposalDto> {
+    const contract = this.fabricGateway.getInstitutionContract();
+    const result = await contract.submitTransaction(
+      'ProposeNewMember',
+      dto.applicantId,
+      dto.applicantName,
+    );
+    return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto;
+  }
+
+  async castVote(proposalId: string, decision: string): Promise<MembershipProposalDto> {
+    const contract = this.fabricGateway.getInstitutionContract();
+    const result = await contract.submitTransaction('CastVote', proposalId, decision);
+    return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto;
+  }
+
+  async getOpenProposals(): Promise<MembershipProposalDto[]> {
+    const contract = this.fabricGateway.getInstitutionContract();
+    const result = await contract.evaluateTransaction('GetOpenProposals');
+    // Same as GetAllInstitutions: the Go implementation initializes its
+    // slice as []*MembershipProposal{}, never nil.
+    return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto[];
+  }
+
+  async getProposal(proposalId: string): Promise<MembershipProposalDto> {
+    const contract = this.fabricGateway.getInstitutionContract();
+    const result = await contract.evaluateTransaction('GetProposal', proposalId);
+    return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto;
   }
 }

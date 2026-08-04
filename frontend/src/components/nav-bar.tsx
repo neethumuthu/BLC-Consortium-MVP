@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/certificates/new", label: "Issue Certificate" },
   { href: "/certificates/verify", label: "Verify Certificate" },
   { href: "/institutions", label: "Institutions" },
+  { href: "/governance", label: "Governance" },
 ];
 
 export function NavBar({ displayName }: { displayName: string }) {

@@ -22,6 +22,53 @@ Entry format:
 
 ---
 
+## 2026-08-03 — `chaincode.sh deploy`'s init step runs unconditionally, even on the already-committed fast path
+
+**Phase:** ongoing maintenance — found via code review before running anything
+against the live network, not hit as a real failure.
+**Symptom (would-be):** re-running the exact deploy command used for the very
+first-ever deploy — e.g. `./scripts/chaincode.sh deploy institution-cc
+--init-function InitLedger --init-args '[...]'` — against a channel where
+`institution-cc` is already committed at that same version/sequence would
+abort at stage 6 with `founding institution list is already initialized and
+cannot be reinitialized`, surfaced as a script failure rather than a clean
+no-op or an upfront warning.
+**Command / context:** investigated while deciding how to safely redeploy
+`institution-cc` on a live network with real committed institutions —
+deliberately checked the script's actual behavior before running anything,
+per the standing rule about confirming before risky actions on shared
+infrastructure.
+**Root cause:** `cmd_deploy` (`chaincode.sh:393-429`) has two independent,
+sequential decision points that look related but aren't gated on each other:
+(1) `already_committed()` correctly detects "same version/sequence already
+committed" and skips package/install/approve/commit in that case (this part
+is a deliberate, documented safeguard — see the 2026-07-17 duplicate-
+chaincodeID incident this same file already logs); (2) stage 6's `if [ -n
+"$INIT_FUNCTION" ]` check (line 424) runs completely independently of which
+branch (1) took, so passing `--init-function` always attempts the init call,
+regardless of whether this was a fresh deploy or a same-version re-run.
+`InitLedger` itself is correctly idempotency-guarded in Go
+(`governance.go:56-58` — it checks `foundingListKey` and refuses to
+reinitialize rather than overwriting anything), so this **cannot corrupt
+ledger state** — the actual risk is purely a confusing, avoidable script
+failure for whoever runs the deploy command from memory (plausible, since
+it's the most recently-used form of the command) without realizing
+`--init-function` should only ever be passed on a chaincode's true
+first-ever deploy.
+**Resolution:** none applied to the script itself — documenting as a known
+gotcha is the fix for now. The correct pattern for any deploy after the
+first: never pass `--init-function`/`--init-args` again; if there's any
+doubt about the current live sequence, confirm with `peer lifecycle
+chaincode querycommitted --channelID blcchannel --name <cc-name>` first.
+**Follow-up:** a real fix would have stage 6 check the same
+`already_committed` result stage 2-4 already computed (skip init entirely,
+or print an explicit "skipping init — already initialized" message) instead
+of relying on the caller to remember not to pass `--init-function` on a
+re-run. Not urgent — no incident has actually happened from this yet — but
+worth fixing next time this script is touched for another reason.
+
+---
+
 ## 2026-07-29 — Nav bar had no responsive layout, caused page-wide horizontal overflow
 
 **Phase:** 14 — full UI regression pass, narrow-viewport check.

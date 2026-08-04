@@ -19,13 +19,17 @@ interface StatusConfig {
 
 // Covers every status string this app ever renders: certificate.status
 // ("active"/"revoked"), verification.status ("VALID"/"TAMPERED"/
-// "REVOKED"), and institution.status ("active", observed value only).
+// "REVOKED"), institution.status ("active", observed value only), and
+// membershipProposal.status ("open"/"approved"/"rejected").
 const STATUS_MAP: Record<string, StatusConfig> = {
   valid: { label: "Valid", tone: "green", icon: CheckCircle2 },
   active: { label: "Active", tone: "green", icon: CheckCircle2 },
   tampered: { label: "Tampered", tone: "red", icon: XCircle },
   revoked: { label: "Revoked", tone: "amber", icon: Ban },
   pending: { label: "Pending", tone: "yellow", icon: Clock3 },
+  open: { label: "Open", tone: "yellow", icon: Clock3 },
+  approved: { label: "Approved", tone: "green", icon: CheckCircle2 },
+  rejected: { label: "Rejected", tone: "red", icon: XCircle },
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {

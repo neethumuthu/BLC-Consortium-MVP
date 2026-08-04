@@ -64,14 +64,14 @@ function mapToHttpStatus(
     return HttpStatus.NOT_FOUND;
   }
   if (
-    /is not the issuer of|is not an active institution|is not a registered institution|not a founding institution/.test(
+    /is not the issuer of|is not an active institution|is not a registered institution|not a founding institution|is the applicant and cannot vote on its own proposal/.test(
       message,
     )
   ) {
     return HttpStatus.FORBIDDEN;
   }
   if (
-    /already revoked|already registered|already a member|already voted|already-approved membership proposal exists/.test(
+    /already revoked|already registered|already a member|already voted|already-approved membership proposal exists|is not open \(status:/.test(
       message,
     )
   ) {
