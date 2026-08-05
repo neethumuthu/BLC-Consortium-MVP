@@ -24,11 +24,16 @@ jobs:
     steps:
       - name: Fire context-maintenance dispatch
         env:
-          # The default GITHUB_TOKEN cannot call this endpoint at all
-          # (confirmed live: 403 "Resource not accessible by integration",
-          # regardless of the permissions: block above) - repository_dispatch
-          # requires a real PAT. Reusing PROJECTS_TOKEN rather than asking
-          # for a new secret, since it already exists for project-sync.sh.
+          # This endpoint needs a real PAT with `repo` scope (or
+          # fine-grained Contents: write) - confirmed live, not assumed:
+          #   - github.token (default Actions token): 403 "Resource not
+          #     accessible by integration", regardless of the permissions:
+          #     block above.
+          #   - secrets.PROJECTS_TOKEN (existing PAT, project-scoped for
+          #     project-sync.sh): 404 Not Found - doesn't have repo-level
+          #     scope for this repo/endpoint either.
+          # A new secret with the right scope is required; see this
+          # workflow's own header comment / commit history for status.
           GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
         run: |
           gh api "repos/${{ github.repository }}/dispatches" \
