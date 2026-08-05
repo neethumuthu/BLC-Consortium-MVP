@@ -1,8 +1,10 @@
-# Nudges the PM on Slack when a change carries unresolved product questions.
-# Convention: any change blocked on a product decision lists it under a
-# "## Open questions" section in its proposal.md. Agents are instructed
-# (AGENTS.md) to add questions there instead of inventing product answers.
-# A change must not pass Align while this section is non-empty.
+# Nudges the PM on Slack when a change carries unresolved product questions,
+# and ensures a GitHub issue exists so the PM has somewhere durable to answer
+# (see proposal-answer-sync.yml for what happens when they do). Convention:
+# any change blocked on a product decision lists it under a "## Open
+# questions" section in its proposal.md. Agents are instructed (AGENTS.md) to
+# add questions there instead of inventing product answers. A change must not
+# pass Align while this section is non-empty.
 name: requirements-nudge
 on:
   push:
@@ -15,19 +17,45 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find changes with open product questions
+      - name: Find changes with open product questions, ensure a tracking issue exists
         id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
         run: |
           BLOCKED=""
           for f in $(find openspec/changes -maxdepth 2 -name proposal.md -not -path '*/archive/*' 2>/dev/null); do
             # non-empty content between "## Open questions" and the next heading?
-            CONTENT=$(awk '/^## Open questions/{flag=1;next}/^## /{flag=0}flag' "$f" | grep -v '^\s*$' || true)
-            if [ -n "$CONTENT" ]; then
-              BLOCKED="$BLOCKED\n• $(dirname "$f" | xargs basename) — ${{ github.server_url }}/${{ github.repository }}/blob/main/$f"
+            QUESTION=$(awk '/^## Open questions/{flag=1;next}/^## /{flag=0}flag' "$f" | sed '/^\s*$/d')
+            if [ -z "$QUESTION" ]; then
+              continue
             fi
+            id=$(dirname "$f" | xargs basename)
+            title="Open question: ${id}"
+
+            # Reuse an existing issue rather than creating a new one on every
+            # push/cron re-nudge - title is the lookup key, not a Change-ID
+            # field (that's project-sync.sh's separate Project-board
+            # convention, not wired to issues at all - see its own header
+            # comment on why issue-body text was rejected there. This one's
+            # simpler: title search is enough for our one narrow purpose).
+            existing=$(gh issue list --repo "$REPO" --state all --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+            if [ -z "$existing" ]; then
+              gh label create open-question --repo "$REPO" --color FBCA04 \
+                --description "Blocked on a product decision" 2>/dev/null || true
+              body=$(printf '%s\n\n---\nFull proposal: %s/%s/blob/main/%s\n\nReply with `@claude <your answer>` to have it merged into the proposal automatically as a PR for review.\n' \
+                "$QUESTION" "$SERVER_URL" "$REPO" "$f")
+              issue_url=$(gh issue create --repo "$REPO" --title "$title" --label open-question --body "$body")
+            else
+              issue_url="${SERVER_URL}/${REPO}/issues/${existing}"
+            fi
+
+            BLOCKED="$BLOCKED\n• ${id} — ${issue_url}"
           done
           if [ -n "$BLOCKED" ]; then
             echo "blocked=true" >> "$GITHUB_OUTPUT"
@@ -41,9 +69,4 @@ jobs:
           webhook: ${{ secrets.SLACK_WEBHOOK_PIPELINE }}
           webhook-type: incoming-webhook
           payload: |
-            text: "<@${{ vars.PM_SLACK_MEMBER_ID }}> these change(s) are blocked on product input — please refine the requirements (answer in the proposal, or reply here and the team will sweep it in):${{ steps.scan.outputs.list }}"
-
-      # Answers must land in the repo, not die in Slack: the PM either edits
-      # proposal.md directly (or comments on the linked issue and the developer
-      # runs @claude to merge the answer into the proposal). The daily 🔨 sweep
-      # is the backstop for answers given in Slack threads.
+            text: "<@${{ vars.PM_SLACK_MEMBER_ID }}> these change(s) are blocked on product input — reply on the linked issue with your answer (or edit the proposal directly):${{ steps.scan.outputs.list }}"

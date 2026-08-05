@@ -1,0 +1,78 @@
+# When the PM replies "@claude <answer>" on one of requirements-nudge.yml's
+# "Open question: <id>" issues, resolves that change's proposal.md Open
+# questions section with the answer and opens a PR for review - never
+# pushes directly to main. Deliberately does NOT touch tasks.md, design.md,
+# or any implementation code, and does NOT resume implementation - scope is
+# "automate the requirements update," nothing more, per product decision.
+#
+# Kept separate from ai-pr-review.yml (Ring 2 PR review + its own general
+# @claude handling) rather than folded into it - two genuinely different
+# tasks triggered by the same "@claude" keyword would mean one prompt has to
+# disambiguate intent every time; a dedicated, narrowly-scoped workflow can't
+# misfire into the wrong behavior.
+name: proposal-answer-sync
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  sync:
+    # issue_comment fires for PR discussion threads too (they show up as
+    # "issues" with a pull_request key) - excluded explicitly so this never
+    # runs on a PR conversation, only on our own tracking issues.
+    if: |
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '@claude') &&
+      startsWith(github.event.issue.title, 'Open question: ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity for the commit this run will make
+        run: |
+          git config --global user.name "claude-requirements-sync[bot]"
+          git config --global user.email "claude-requirements-sync[bot]@users.noreply.github.com"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            A PM has answered an open product question. Context:
+            - This repo uses OpenSpec changes under openspec/changes/<id>/.
+            - The triggering GitHub issue is titled "Open question: <id>" -
+              read the real id from this issue's actual title.
+            - The issue body contains the original question and a link to
+              the change's proposal.md.
+            - The triggering comment (the one that mentioned you) contains
+              the PM's answer - read it from this issue's latest comment.
+
+            Task:
+            1. Read openspec/changes/<id>/proposal.md (using the real id).
+            2. Resolve its "## Open questions" section using the PM's answer:
+               replace the open question text with a short note recording
+               the decision and citing this issue as the source (e.g.
+               "Resolved via issue #<N>: <answer summary>"), or clear the
+               section entirely if nothing remains unresolved.
+            3. Do NOT modify tasks.md, design.md, specs/, or any
+               implementation code - only proposal.md's Open questions
+               section. Do not attempt to resume or continue implementation
+               - that is explicitly out of scope for this workflow.
+            4. Create a new branch, commit just that one change, push it, and
+               open a pull request against main with a clear title and a
+               body explaining which issue/comment it resolves. Never push
+               directly to main.
+            5. Post a short comment on this issue linking the PR you opened.
+
+            If the issue title doesn't match the "Open question: <id>"
+            pattern, or that change folder doesn't exist, or the proposal has
+            no non-empty Open questions section to resolve, stop and post a
+            comment on the issue explaining why, rather than guessing or
+            forcing a change.
+          claude_args: '--allowedTools "Read,Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh issue comment:*)"'
