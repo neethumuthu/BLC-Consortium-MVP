@@ -22,6 +22,10 @@ jobs:
     permissions:
       contents: read
       issues: write
+      id-token: write  # claude-code-action needs this to fetch its own
+                       # OIDC token - see context-gardener.yml's identical
+                       # note; confirmed live, missing from the original
+                       # template.
     steps:
       - uses: actions/checkout@v4
 

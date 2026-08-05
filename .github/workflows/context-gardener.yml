@@ -23,7 +23,14 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: read   # to look up the last successful run's commit below
+      actions: read    # to look up the last successful run's commit below
+      id-token: write  # claude-code-action needs this to fetch its own
+                       # OIDC token - confirmed live: without it, the action
+                       # fails immediately ("Could not fetch an OIDC token")
+                       # before it even reaches ANTHROPIC_API_KEY. Missing
+                       # from the original template; ai-pr-review.yml's
+                       # template already had it, this one and
+                       # context-drift-check.yml's didn't.
     steps:
       - uses: actions/checkout@v4
         with:
