@@ -1,0 +1,45 @@
+# Ring 2 — agentic PR review + interactive @claude
+name: ai-pr-review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]          # @claude mentions in issues/PRs
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: |
+      github.event_name == 'pull_request' ||
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # On @claude mentions the action handles the request interactively.
+          # On PR events, run the structured Ring 2 review:
+          prompt: |
+            ${{ github.event_name == 'pull_request' && 'Review this PR as the Ring 2 agent.
+            Load AGENTS.md, context/rules/, context/codebase/CONVENTIONS.md,
+            context/decisions/ and the linked change folder under openspec/changes/.
+            Check, in order:
+            1. Conformance to rules/ and CONVENTIONS.md (cite the violated rule).
+            2. Consistency with accepted ADRs.
+            3. Regressions against openspec/specs/ for touched capabilities.
+            4. Every scenario in the change has a matching test.
+            5. tasks.md items claimed complete are actually implemented.
+            6. Security smells (secrets, injection, authz gaps).
+            Post findings as concise PR review comments; severity-tag each
+            [blocker|should-fix|nit]. Do not comment on style a linter covers.' || '' }}
+          claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Read,Grep,Glob"'
