@@ -1,0 +1,30 @@
+# Fires a shared repository_dispatch event once daily, for context-gardener
+# and context-drift-check to react to independently.
+#
+# Exists only because anthropics/claude-code-action@v1 does not support
+# `schedule` (or `push`) as a trigger event - confirmed by a real failed run
+# ("Unsupported event type: push"), not assumed from docs alone. This plain,
+# non-claude-action workflow is the one place that actually needs `schedule`;
+# the two Claude-driven jobs each only need to listen for repository_dispatch
+# instead of solving that restriction twice.
+name: scheduler-dispatch
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily, 6am UTC. context-gardener runs every time
+                          # this fires; context-drift-check gates itself down
+                          # to Monday only in its own job, rather than this
+                          # workflow needing a second, separate cron.
+  workflow_dispatch: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fire context-maintenance dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/dispatches" \
+            -f event_type=context-maintenance

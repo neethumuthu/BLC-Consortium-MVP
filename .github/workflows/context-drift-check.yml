@@ -1,0 +1,61 @@
+# Weekly verification that context/ still matches the codebase — the
+# backstop for things context-gardener's incremental, diff-based checks
+# might miss, since this re-samples EXISTING claims regardless of whether
+# anything recently changed.
+#
+# Runs on repository_dispatch (from scheduler-dispatch.yml), not schedule:
+# anthropics/claude-code-action@v1 doesn't support the schedule event
+# (confirmed alongside context-gardener's identical push-trigger failure,
+# same underlying restriction). scheduler-dispatch.yml fires daily so
+# context-gardener can batch daily; this job self-gates to Monday only
+# rather than needing its own separate cron, since drift-check's whole
+# point is periodic auditing, not reacting to anything specific.
+name: context-drift-check
+on:
+  repository_dispatch:
+    types: [context-maintenance]
+  workflow_dispatch: {}   # always runs its real check, regardless of day - for manual testing
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Only do real work on Mondays (or when manually dispatched)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date -u +%u)" = "1" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.gate.outputs.run == 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the drift checker. For every file under context/:
+            1. Flag `last_verified` older than 60 days.
+            2. Sample 3-5 concrete claims per file (commands, paths, module names,
+               dependency versions) and verify them against the repo. Try the build
+               and test commands from AGENTS.md.
+            3. Check size budgets: AGENTS.md < 150 lines, context files < 300 lines.
+            4. Check LEARNINGS.md for entries older than 6 months not yet graduated.
+
+            For each confirmed drift, open ONE GitHub issue (label: context-drift)
+            with file, claim, evidence — unless an open issue already covers it.
+            End with a summary: files checked / verified / drifted.
+          claude_args: '--allowedTools "Bash,Read,Grep,Glob"'
+
+      - uses: slackapi/slack-github-action@v2
+        if: steps.gate.outputs.run == 'true' && always()
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_QUALITY }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "Weekly context drift check: ${{ job.status }} — open items: ${{ github.server_url }}/${{ github.repository }}/issues?q=is%3Aissue+is%3Aopen+label%3Acontext-drift"

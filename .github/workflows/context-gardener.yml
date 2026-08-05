@@ -1,38 +1,68 @@
-# Compound step automation — proposes context updates after every merge to main.
-# Context changes are PRs reviewed by the context steward, never silent writes.
+# Compound step automation — proposes context updates for everything merged
+# to main since the last successful run. Context changes are PRs reviewed by
+# the context steward, never silent writes.
+#
+# Runs on repository_dispatch (from scheduler-dispatch.yml), not push:
+# anthropics/claude-code-action@v1 doesn't support the push event at all
+# (confirmed by a real failed run, "Unsupported event type: push"). Batching
+# daily rather than reacting per-merge isn't just a workaround for that
+# limitation - it also avoids a real race: two merges landing close together
+# would otherwise trigger two gardener runs that each branch off a slightly
+# stale HEAD and can open conflicting PRs. Diffing from the last successful
+# run's commit (not just HEAD~1) means every merge since then gets covered
+# exactly once, regardless of how many landed since the last check.
 name: context-gardener
 on:
-  push:
-    branches: [main]
+  repository_dispatch:
+    types: [context-maintenance]
+  workflow_dispatch: {}
 
 jobs:
   garden:
-    # Skip the gardener's own merges to avoid loops
-    if: "!startsWith(github.event.head_commit.message, 'context:')"
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+      actions: read   # to look up the last successful run's commit below
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Determine range since last successful run
+        id: range
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_SHA=$(gh run list --workflow=context-gardener.yml --status=success \
+            --json headSha --limit 1 --jq '.[0].headSha // empty' 2>/dev/null || true)
+          if [ -z "$LAST_SHA" ] || ! git cat-file -e "$LAST_SHA" 2>/dev/null; then
+            echo "No usable previous successful run - falling back to HEAD~1" >&2
+            LAST_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+          fi
+          echo "since=$LAST_SHA" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            You are the context gardener. Examine the just-merged commit(s):
-            `git log -1 --stat` and `git diff HEAD~1 HEAD`.
+            You are the context gardener. Examine every commit merged to main
+            since the last successful gardener run:
+            `git log ${{ steps.range.outputs.since }}..HEAD --stat` and
+            `git diff ${{ steps.range.outputs.since }} HEAD`.
+            If that range is empty, exit without doing anything else.
 
-            1. If the merge implements an OpenSpec change whose tasks are complete,
-               archive it (openspec/changes/archive/) and update openspec/specs/.
-            2. Diff reality vs context/: did this merge introduce a new convention,
-               dependency, integration, structural change, or concern? Update the
-               matching context file(s); bump `last_verified` ONLY for files you
-               actually verified against the code.
-            3. Mine the PR review comments (gh pr view --comments) for recurring-rule
-               candidates; add LEARNINGS.md entries per its format.
+            1. For each OpenSpec change in that range whose tasks are now
+               complete, archive it (openspec/changes/archive/) and update
+               openspec/specs/.
+            2. Diff reality vs context/: did these commits introduce a new
+               convention, dependency, integration, structural change, or
+               concern? Update the matching context file(s); bump
+               `last_verified` ONLY for files you actually verified against
+               the code.
+            3. Mine each merged PR's review comments (gh pr view --comments)
+               for recurring-rule candidates; add LEARNINGS.md entries per
+               its format.
             4. If nothing needs updating, exit without creating a branch.
 
             Deliver everything as ONE branch `context/gardener-${{ github.sha }}`
