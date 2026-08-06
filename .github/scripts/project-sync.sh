@@ -201,7 +201,16 @@ handle_push() {
     existed_archived_after=$(git ls-tree -d --name-only "$after" -- "${ARCHIVE_DIR}/${id}" 2>/dev/null || true)
 
     if [ -n "$existed_archived_after" ]; then
-      set_stage "$id" "$STAGE_DONE"
+      # The openspec-archive-change skill prepends today's date to the
+      # folder name on archive (<id> -> <YYYY-MM-DD>-<id>), confirmed live
+      # by this exact bug: the Project item's Change-ID was set BEFORE
+      # archiving, using the un-prefixed name, so looking it up with the
+      # date-prefixed folder name silently found nothing and Done never
+      # got set. Strip the prefix here (only needed for this branch - the
+      # Propose/Apply cases below use the currently-active, never-prefixed
+      # folder name already).
+      local original_id="${id#[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-}"
+      set_stage "$original_id" "$STAGE_DONE"
     elif [ -z "$existed_before" ]; then
       set_stage "$id" "$STAGE_PROPOSE"
     else
