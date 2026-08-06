@@ -50,7 +50,29 @@
 #   - A field that has never been set on an item is OMITTED from the JSON
 #     entirely, not present as null.
 #
-# Requires: gh (authenticated via GH_TOKEN with project scope), jq, and git
+# CORRECTION (2026-08-06, confirmed live against a real run, not assumed):
+# the 2026-07-31 verification above used the CLI version installed on the
+# author's own machine, not the one actually pinned on GitHub's
+# ubuntu-latest Actions runner. Those turned out to disagree on
+# `item-edit`'s own supported flags — the runner's `gh` (whatever version
+# ubuntu-latest carried as of this fix) rejected `--owner`/`--field`/
+# `--value`/`--url` outright ("unknown flag: --owner"), leaving only the
+# ID-based flags (`--id`, `--field-id`, `--project-id`,
+# `--single-select-option-id`, etc.). Rewritten below to use ID-based
+# addressing throughout specifically because it's the intersection that
+# works on both, not a preference either way. Two more real gaps found
+# along the way, in the same live-testing pass:
+#   - `gh project item-list`'s `.content` object (needed for anything about
+#     the linked issue itself) is silently omitted, not errored, when the
+#     token lacks `repo` scope to read that issue's data — `project` scope
+#     alone is only enough for the project board's own fields.
+#   - Beyond `repo`, the token also needs `read:org` and `read:discussion` —
+#     without them `gh project item-list`/`item-edit` fail outright ("unknown
+#     owner type" resolving a login, or an explicit missing-scopes error).
+#
+# Requires: gh (authenticated via GH_TOKEN with project, repo, read:org, and
+# read:discussion scopes — a project-scoped-only PAT fails both the item
+# lookup and the edit, confirmed live, not a hypothetical), jq, and git
 # history covering the push's before..after range (see fetch-depth note in
 # project-sync.yml).
 #
@@ -86,31 +108,68 @@ readonly BRANCH_PREFIX="change/"
 
 readonly ITEM_LIST_LIMIT=200
 
+# --- One-time lookups: project node ID, Stage field ID, and its option
+# name->ID map. Fetched once per script run and cached in globals rather than
+# per set_stage call - these don't change within a single push/PR event, and
+# item-edit's ID-based mode needs all three regardless of which item it's
+# targeting.
+
+PROJECT_ID=""
+STAGE_FIELD_ID=""
+declare -A STAGE_OPTION_ID   # stage display name -> single-select option ID
+
+load_project_metadata() {
+  PROJECT_ID=$(gh project view "$PROJECT_NUMBER" --owner "$OWNER" --format json --jq '.id')
+
+  local fields_json
+  fields_json=$(gh project field-list "$PROJECT_NUMBER" --owner "$OWNER" --format json)
+  STAGE_FIELD_ID=$(echo "$fields_json" | jq -r --arg name "$FIELD_STAGE" '.fields[] | select(.name == $name) | .id')
+  if [ -z "$STAGE_FIELD_ID" ]; then
+    echo "::error::Could not find a '${FIELD_STAGE}' field on project ${PROJECT_NUMBER}" >&2
+    exit 1
+  fi
+
+  while IFS=$'\t' read -r opt_name opt_id; do
+    STAGE_OPTION_ID["$opt_name"]="$opt_id"
+  done < <(echo "$fields_json" | jq -r --arg name "$FIELD_STAGE" \
+    '.fields[] | select(.name == $name) | .options[] | [.name, .id] | @tsv')
+}
+
 # --- Locate the Project item behind a change-id, then move its Stage ------
 
-find_issue_url_for_change() {
-  local change_id="$1" url
+find_item_id_for_change() {
+  local change_id="$1" id
   # No --field flag here: it cannot be combined with --format json (gh
   # errors), and isn't needed anyway — --format json already includes every
   # custom field. gh's own --jq flag also doesn't accept jq's --arg, so we
   # pipe to a real jq invocation instead to safely parameterize the value.
-  url=$(gh project item-list "$PROJECT_NUMBER" --owner "$OWNER" \
+  # .id (the item's own node ID) is used, not .content.url - item-edit's
+  # ID-based mode is the only mode that works on the Actions runner's gh
+  # version (see header note), and it addresses the item by ID, not URL.
+  id=$(gh project item-list "$PROJECT_NUMBER" --owner "$OWNER" \
     --format json --limit "$ITEM_LIST_LIMIT" \
-    | jq -r --arg id "$change_id" --arg key "$FIELD_CHANGE_ID_JSON_KEY" \
-      '.items[] | select(.[$key] == $id) | .content.url // empty' \
+    | jq -r --arg cid "$change_id" --arg key "$FIELD_CHANGE_ID_JSON_KEY" \
+      '.items[] | select(.[$key] == $cid) | .id // empty' \
     | head -n1)  # assumes at most one item per Change-ID; picks one arbitrarily if that's violated, no warning
-  if [ -z "$url" ]; then
+  if [ -z "$id" ]; then
     echo "::warning::No Project item found with Change-ID '${change_id}'" >&2
     return 1
   fi
-  echo "$url"
+  echo "$id"
 }
 
 set_stage() {
-  local change_id="$1" stage="$2" issue_url
-  issue_url=$(find_issue_url_for_change "$change_id") || return 0
-  gh project item-edit "$PROJECT_NUMBER" --owner "$OWNER" --url "$issue_url" \
-    --field "$FIELD_STAGE" --value "$stage"
+  local change_id="$1" stage="$2" item_id option_id
+  item_id=$(find_item_id_for_change "$change_id") || return 0
+
+  option_id="${STAGE_OPTION_ID[$stage]:-}"
+  if [ -z "$option_id" ]; then
+    echo "::error::No option ID found for Stage value '${stage}' - check the option still exists on the board" >&2
+    return 1
+  fi
+
+  gh project item-edit --id "$item_id" --project-id "$PROJECT_ID" \
+    --field-id "$STAGE_FIELD_ID" --single-select-option-id "$option_id"
   echo "Set '${change_id}' -> Stage: ${stage}"
 }
 
@@ -181,8 +240,8 @@ handle_pull_request() {
 }
 
 case "$EVENT_NAME" in
-  push) handle_push ;;
-  pull_request) handle_pull_request ;;
+  push) load_project_metadata; handle_push ;;
+  pull_request) load_project_metadata; handle_pull_request ;;
   schedule) : ;; # no Stage transition here; compound-nudge is project-sync.yml's own separate step
   *) echo "::warning::Unhandled event_name '${EVENT_NAME}'" >&2 ;;
 esac
