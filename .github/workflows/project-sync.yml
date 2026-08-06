@@ -44,8 +44,10 @@ jobs:
         run: |
           echo "--- viewer ---"
           gh api graphql -f query='query { viewer { login } }' || true
-          echo "--- raw item-list ---"
+          echo "--- raw item-list (--owner neethumuthu) ---"
           gh project item-list 2 --owner neethumuthu --format json --limit 200 || true
+          echo "--- raw item-list (--owner @me) ---"
+          gh project item-list 2 --owner "@me" --format json --limit 200 || true
 
       - name: Sync stages
         env:
