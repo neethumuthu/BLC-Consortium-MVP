@@ -43,4 +43,11 @@ jobs:
             6. Security smells (secrets, injection, authz gaps).
             Post findings as concise PR review comments; severity-tag each
             [blocker|should-fix|nit]. Do not comment on style a linter covers.' || '' }}
-          claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Read,Grep,Glob"'
+          # Bash(gh pr comment:*)/Bash(gh pr review:*) added after a real run
+          # did 11 turns of real analysis, spent real cost, then posted
+          # NOTHING - confirmed live: the prompt says "post findings as PR
+          # review comments" but the original allowlist had no tool that
+          # could actually do that. 2 permission denials on that run match
+          # exactly what you'd expect from it trying gh pr comment/review
+          # and being blocked both times.
+          claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr review:*),Read,Grep,Glob"'
