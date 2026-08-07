@@ -76,7 +76,12 @@ jobs:
             Deliver everything as ONE branch `context/gardener-${{ github.sha }}`
             and open a PR titled "context: post-merge updates (<short-sha>)" with a
             bullet summary. Keep the diff minimal — small PRs get reviewed, big ones rot.
-          claude_args: '--allowedTools "Bash(git:*),Bash(gh pr:*),Bash(openspec:*),Read,Write,Edit,Grep,Glob"'
+          # Bash(mv:*)/Bash(mkdir:*) added after a real run hit 4 permission
+          # denials and silently reported "nothing to update" instead of
+          # completing the archive step its own prompt asks for first -
+          # the original allowlist had no way to actually move a folder to
+          # openspec/changes/archive/.
+          claude_args: '--allowedTools "Bash(git:*),Bash(gh pr:*),Bash(openspec:*),Bash(mv:*),Bash(mkdir:*),Read,Write,Edit,Grep,Glob"'
 
       - uses: slackapi/slack-github-action@v2
         if: success()
