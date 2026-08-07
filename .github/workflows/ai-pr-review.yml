@@ -51,3 +51,8 @@ jobs:
           # exactly what you'd expect from it trying gh pr comment/review
           # and being blocked both times.
           claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr review:*),Read,Grep,Glob"'
+          # TEMPORARY - the gh pr comment/review addition above didn't fix
+          # it (denials went UP, 2->11, still zero posted). Need to see the
+          # actual denied commands this time instead of guessing again.
+          # Revert right after this one diagnostic run.
+          show_full_output: "true"
