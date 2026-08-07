@@ -76,4 +76,12 @@ jobs:
             no non-empty Open questions section to resolve, stop and post a
             comment on the issue explaining why, rather than guessing or
             forcing a change.
-          claude_args: '--allowedTools "Read,Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh issue comment:*)"'
+          # Grep/Glob and the read-only Bash entries added after two live runs
+          # in a row denied every exploratory command Claude tried (18 denials
+          # over 28 turns the first time, 2 denials over 3 turns - then it gave
+          # up - the second) and posted nothing, neither the real edit nor even
+          # the workflow's own "stop and comment why" guardrail path. Same root
+          # cause ai-pr-review.yml's allowlist comment already describes:
+          # without something to orient with, exploratory commands get denied
+          # and the run silently goes nowhere.
+          claude_args: '--allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(gh issue view:*),Bash(find:*),Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh issue comment:*)"'
