@@ -16,7 +16,7 @@ Temporary verification artifact — not a real feature. Exists only to give `req
 
 ## Open questions
 
-- Placeholder question for `proposal-answer-sync.yml` verification: should this test question be answered "yes" or "no"? (Answer supplied via issue comment as part of the live test.)
+- Resolved via issue #6: answered "yes".
 
 ## Impact
 
