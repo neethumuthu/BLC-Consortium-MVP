@@ -82,6 +82,12 @@ jobs:
           # the original allowlist had no way to actually move a folder to
           # openspec/changes/archive/.
           claude_args: '--allowedTools "Bash(git:*),Bash(gh pr:*),Bash(openspec:*),Bash(mv:*),Bash(mkdir:*),Read,Write,Edit,Grep,Glob"'
+          # TEMPORARY - diagnosing the 4 permission denials neither of the
+          # two allowlist changes above resolved. Repo is private (only
+          # Neethu + Dominik have access), so the "publicly visible" warning
+          # in this input's own description is reduced but not zero - revert
+          # right after this one diagnostic run.
+          show_full_output: "true"
 
       - uses: slackapi/slack-github-action@v2
         if: success()
