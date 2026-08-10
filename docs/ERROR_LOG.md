@@ -22,6 +22,129 @@ Entry format:
 
 ---
 
+## 2026-08-10 — Frontend build failed: missing `.env.local` on the staging VM
+
+**Phase:** 15 — Azure staging deployment
+**Symptom:** `npm run build` (`next build`) failed during static
+page-data collection: `Error: Failed to collect configuration for
+/certificates/new` → `Error: Missing required env var
+BLCFOUNDER_API_KEY - see frontend/.env.local`.
+**Command / context:**
+    cd frontend && npm install && npm run build
+    # .env.local had not been created yet at this point in the deploy sequence
+**Root cause:** the frontend's own env-var validation (the same
+`getOrThrow`-style strict-config pattern the backend uses) runs during
+Next.js's page-data collection at *build* time, not only at request
+time — building before `.env.local` existed was the actual mistake, not
+a bug in the app itself. This exact code builds and runs fine locally,
+where `.env.local` already existed from earlier work.
+**Resolution:** created `frontend/.env.local` with `BLCFOUNDER_API_KEY`
+/ `INSTITUTIONA_API_KEY` / `INSTITUTIONB_API_KEY` pulled directly out of
+the already-created `backend/.env.*` files (`grep`+`cut`, so the real
+key values never needed to be retyped or displayed) plus a fresh
+`SESSION_SECRET`, then re-ran `npm run build` — succeeded, all 10 routes
+compiled.
+**Follow-up:** worth remembering for any future from-scratch deployment
+of this repo — `frontend/.env.local` needs to exist *before* the first
+`next build`, not just before `next start`.
+
+---
+
+## 2026-08-10 — `bootstrap-crypto.sh` `mkdir` failed: Docker auto-created `crypto/` as root
+
+**Phase:** 15 — Azure staging deployment
+**Symptom:** `network.sh up` failed at stage 3 with `mkdir: cannot
+create directory '.../network/crypto/ca-bootstrap': Permission denied`,
+immediately after the CA containers themselves had started
+successfully in the same stage.
+**Command / context:**
+    ./scripts/network.sh up
+    # failed inside bootstrap-crypto.sh's first mkdir -p "$registrar_home"
+**Root cause:** `docker-compose-ca.yaml` bind-mounts
+`../crypto/ca-servers/<OrgName>` into each CA container. On this fresh
+VM, that host path didn't exist yet when `docker compose up` ran —
+Docker (running as root) auto-created it, owned by `root:root`, a
+well-known Docker-on-Linux behavior for bind-mount sources that don't
+pre-exist. Since `mkdir -p` must be able to write into the *parent*
+directory to create a new subdirectory, and `crypto/` itself (not just
+`ca-servers/`) had been swept into that root-owned auto-creation,
+`bootstrap-crypto.sh`'s own `mkdir -p crypto/ca-bootstrap/<org>` (a
+sibling directory Docker never touched) failed too — the whole `crypto/`
+directory was blocked for the non-root user, not just the parts Docker
+actually used.
+**Resolution:** stopped the partially-started CA containers, wiped the
+root-owned state, then *pre-created* `crypto/ca-servers/<org>` for all 4
+orgs as the normal user *before* retrying `network.sh up` — so Docker
+found existing, correctly-owned directories on the retry instead of
+auto-creating new root-owned ones:
+
+    docker compose -f generated/docker-compose-ca.yaml down -v
+    sudo rm -rf crypto generated channel-artifacts
+    mkdir -p crypto/ca-servers/{BLCOrderer,BLCFounder,InstitutionA,InstitutionB}
+    ./scripts/network.sh up
+
+Second attempt completed cleanly through all 10 stages.
+**Follow-up:** this is specific to fresh hosts where `crypto/` has never
+existed before `docker compose up` runs — never hit locally, since that
+directory already existed (correctly owned) from earlier work. Worth
+either pre-creating these directories inside `bootstrap-crypto.sh`
+itself before the `docker compose up` call, or documenting the
+ordering requirement, so a future from-scratch deployment doesn't
+rediscover this the same way.
+
+---
+
+## 2026-08-10 — VM SKU/quota/capacity: six failed sizes/regions before finding one that actually worked
+
+**Phase:** 15 — Azure staging deployment
+**Symptom:** `az vm create` failed six times in a row, across two
+regions and four distinct VM sizes, before succeeding on the seventh
+attempt — three different error shapes, not one repeated failure:
+    1. `Standard_B2ms`, northeurope → `SkuNotAvailable` (capacity)
+    2. `Standard_B4ms`, northeurope → `SkuNotAvailable` (capacity)
+    3. `Standard_F4s_v2`, northeurope → `SkuNotAvailable` (capacity)
+    4. `Standard_B2ms`, westeurope → `SkuNotAvailable` (capacity)
+    5. `Standard_F4s_v2`, westeurope → `SkuNotAvailable` (capacity)
+    6. `Standard_B4s_v2`, westeurope → `QuotaExceeded` (`standardBsv2Family`, limit 0)
+**Command / context:**
+    az vm create --resource-group blc31-staging-rg --name blc31-staging-vm \
+      --location <northeurope|westeurope> --size <size> ... (full networking flags)
+**Root cause:** initially assumed to be ordinary regional capacity
+shortage (attempts 1-5) or a subscription-wide quota restriction
+(attempt 6, since this is an "Azure Plan"/CSP-type subscription).
+Neither explanation was actually correct. Cross-referencing
+`az vm list-usage --location westeurope` (per-family quota limits)
+against `az vm list-skus --location westeurope --resource-type
+virtualMachines` (what's actually offered to this subscription in this
+region) revealed the real cause: this subscription's catalog only
+includes *newer* VM hardware generations. Every size tried through
+attempt 6 was from an older generation (`Bs` classic, `Fsv2`, `Bsv2`)
+either genuinely absent from the catalog (attempts 1-5 — Azure's own
+`SkuNotAvailable`/"capacity" message was misleading; the real issue was
+non-availability, not contention) or present but with zero quota
+approved for that specific family (attempt 6).
+**Resolution:** found `Standard_F4as_v6` by explicitly checking it
+appeared in *both* lists — `az vm list-skus` (present) and `az vm
+list-usage` (`Fasv6` family, limit 10) — before attempting it. Succeeded
+on the first try:
+
+    az vm create --resource-group blc31-staging-rg --name blc31-staging-vm \
+      --location westeurope --image Canonical:ubuntu-24_04-lts:server:latest \
+      --size Standard_F4as_v6 --admin-username azureuser --generate-ssh-keys \
+      --public-ip-address blc31-staging-pip-we --nsg blc31-staging-nsg-we \
+      --vnet-name blc31-staging-vnet-we --subnet blc31-staging-subnet-we \
+      --os-disk-size-gb 64 --storage-sku StandardSSD_LRS
+
+**Follow-up:** for any future VM creation on this subscription, check
+`az vm list-skus ... --query "[].name"` and `az vm list-usage
+--location <region>` *before* picking a size — don't infer availability
+from a size's popularity or its behavior in a different subscription.
+The northeurope VNet/subnet/NSG created during attempts 1-3 (before the
+region switch) were left in place, orphaned but free (no Public
+IP/VM ever succeeded there) — cleanup deferred, not forgotten.
+
+---
+
 ## 2026-08-03 — `chaincode.sh deploy`'s init step runs unconditionally, even on the already-committed fast path
 
 **Phase:** ongoing maintenance — found via code review before running anything

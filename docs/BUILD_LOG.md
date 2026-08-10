@@ -2528,3 +2528,332 @@ mobile viewports.
 that Status/Issued columns are reachable by scrolling on narrow
 screens) is a legitimate future polish item, deliberately left open
 rather than adding UI scope unprompted mid-regression-pass.
+
+## Phase 15 — Azure staging deployment (2026-08-10)
+
+**Goal:** stand up a real, externally-reachable staging environment for
+`agentic-qa` to eventually target — the full stack (Fabric network, both
+chaincodes, all 3 backend instances, frontend) on a single Azure VM,
+reachable over real HTTPS. Not AKS — a deliberate scope decision (see
+project memory `project_blc31_agentic_qa_azure_direction`): the minimal
+footprint to unblock `agentic-qa`, not a production topology.
+
+**Subscription/resource group.** Reused the existing `farmkube 2026-05`
+subscription (Espeo tenant), already authenticated via `az` CLI —
+confirmed before creating anything:
+
+```bash
+az account show --output table
+az group list --output table
+az group create --name blc31-staging-rg --location northeurope --output table
+```
+
+Only pre-existing group was `NetworkWatcherRG` (an Azure system-managed
+group, not for application resources) — created a dedicated
+`blc31-staging-rg` so the whole environment can be torn down with one
+`az group delete` later.
+
+**Networking — Public IP with DNS label, VNet/subnet, NSG with exactly 3
+inbound rules.** Deliberately no Load Balancer: confirmed directly
+against Microsoft's own Public IP docs that a VM's network interface can
+hold a Standard SKU public IP directly — Load Balancer is only needed to
+distribute traffic across *multiple* VMs, not for a single-VM setup.
+Also confirmed Azure VNets themselves are free (no cost), and (per the
+2026-08-10 Slack thread that authorized this deployment) FarmKube's own
+prior Azure cost breakdown showed Load Balancer (€77.60 of €144.82
+total) as the dominant fixed cost — avoiding it here was a deliberate,
+evidence-based choice, not an assumption.
+
+```bash
+az network vnet create \
+  --resource-group blc31-staging-rg --name blc31-staging-vnet-we \
+  --location westeurope --address-prefix 10.10.0.0/16 \
+  --subnet-name blc31-staging-subnet-we --subnet-prefix 10.10.1.0/24
+
+az network nsg create \
+  --resource-group blc31-staging-rg --name blc31-staging-nsg-we --location westeurope
+
+az network nsg rule create --resource-group blc31-staging-rg --nsg-name blc31-staging-nsg-we \
+  --name allow-https --priority 100 --direction Inbound --access Allow --protocol Tcp \
+  --source-address-prefixes '*' --source-port-ranges '*' --destination-port-ranges 443
+
+az network nsg rule create --resource-group blc31-staging-rg --nsg-name blc31-staging-nsg-we \
+  --name allow-http --priority 110 --direction Inbound --access Allow --protocol Tcp \
+  --source-address-prefixes '*' --source-port-ranges '*' --destination-port-ranges 80
+
+az network nsg rule create --resource-group blc31-staging-rg --nsg-name blc31-staging-nsg-we \
+  --name allow-ssh-my-ip --priority 120 --direction Inbound --access Allow --protocol Tcp \
+  --source-address-prefixes <admin-IP>/32 --source-port-ranges '*' --destination-port-ranges 22
+
+az network public-ip create \
+  --resource-group blc31-staging-rg --name blc31-staging-pip-we --location westeurope \
+  --sku Standard --allocation-method Static --dns-name blc31-staging
+```
+
+443/80 open to `Any` (443 for the actual traffic including `agentic-qa`'s
+GitHub-Actions-runner-driven browser; 80 only for the ACME HTTP-01
+challenge + HTTP→HTTPS redirect). 22 restricted to the admin's own `/32`
+— the one deliberate asymmetry, confirmed correct via
+`az network nsg rule show` after creation (source showed the specific
+IP, not `*`). Backend ports (3001-3003) and every Fabric port (peer,
+orderer, CouchDB, CA) never got an inbound rule at all — same trust
+model as the existing `ApiKeyGuard` (network-reachable = dangerous),
+just enforced one layer lower now too. The Public IP's DNS label
+(`blc31-staging` → `blc31-staging.westeurope.cloudapp.azure.com`) is
+Azure's own free feature — chosen specifically over Let's Encrypt's
+newer (2026-01, GA) short-lived IP-address certificates, since Caddy's
+own docs confirm IP certs aren't its zero-config path (falls back to a
+self-signed internal CA for non-public/IP hosts) and the 160-hour
+lifetime is meaningfully more fragile than a normal domain cert's 90-day
+cycle — a real domain-style hostname sidesteps that entirely, for free.
+
+**VM creation — a real, multi-attempt saga, not a clean first pass. Full
+blow-by-blow in `docs/ERROR_LOG.md`'s 2026-08-10 "VM SKU/quota/capacity"
+entry.** `Standard_B2ms` (the originally-planned size, chosen for its
+8GB memory target after explicitly rejecting `B2s`'s tighter 4GB margin)
+failed with `SkuNotAvailable` in `northeurope`. Escalating size within
+the same family (`B4ms`) and switching families (`F4s_v2`) both failed
+the same way, still in `northeurope`. Switching region to `westeurope`
+(larger, more heavily-provisioned) hit the identical failure for both
+`B2ms` and `F4s_v2` again, then a *different* failure — `QuotaExceeded`
+(not capacity) for `Standard_B4s_v2`, `Current Limit: 0`. Cross-
+referencing `az vm list-usage` (per-family quota) against `az vm
+list-skus` (what's actually offered) revealed the real cause: this
+subscription's catalog only includes newer VM hardware generations —
+every size tried was from an older generation genuinely absent from the
+catalog, not capacity-constrained or quota-blocked in the way the error
+messages implied at face value. `Standard_F4as_v6` was the first size
+confirmed *both* present in the catalog *and* quota-approved (`Fasv6`
+family, limit 10) — succeeded on the first attempt once picked correctly.
+
+```bash
+az vm create \
+  --resource-group blc31-staging-rg --name blc31-staging-vm --location westeurope \
+  --image Canonical:ubuntu-24_04-lts:server:latest --size Standard_F4as_v6 \
+  --admin-username azureuser --generate-ssh-keys \
+  --public-ip-address blc31-staging-pip-we --nsg blc31-staging-nsg-we \
+  --vnet-name blc31-staging-vnet-we --subnet blc31-staging-subnet-we \
+  --os-disk-size-gb 64 --storage-sku StandardSSD_LRS
+```
+
+**Host prerequisites.** Ubuntu 24.04 LTS ships with none of this
+project's tooling — installed explicitly, versions pinned to match
+`deployment/local.yaml` rather than "latest":
+
+```bash
+# Docker (official apt repo, not the convenience script)
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker azureuser
+
+# GitHub CLI (to clone the private repo)
+sudo apt-get install -y gh
+gh auth login   # interactive, browser device-flow
+
+# Hyperledger Fabric binaries, pinned to this repo's exact versions
+sudo apt-get install -y jq python3-yaml
+curl -sSLO https://raw.githubusercontent.com/hyperledger/fabric/main/scripts/install-fabric.sh
+chmod +x install-fabric.sh
+./install-fabric.sh --fabric-version 2.5.0 --ca-version 1.5.15 b
+echo 'export PATH=$PATH:$HOME/fabric-install/bin' >> ~/.bashrc
+
+# Go (matching network/go.mod's `go 1.25.0`)
+curl -sSLO https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+
+# Node.js 22 (backend requires >=20.9.0)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+**Cloned `origin/main` (not the local working copy) — deliberately.**
+The local machine had uncommitted changes to `network.yaml`/`local.yaml`
+from an unrelated same-day governance-gap investigation (a 4th
+institution, `InstitutionD`, added via `org-add.sh` to test a live
+onboarding scenario — never committed). Cloning `origin/main` on the VM
+naturally excluded that org and gave the clean, already-proven 3-org
+topology (`BLCFounder`/`InstitutionA`/`InstitutionB`) instead — confirmed
+via `git status` on the local machine before cloning, not assumed.
+
+```bash
+gh repo clone neethumuthu/BLC-Consortium-MVP
+```
+
+**Network bootstrap — one real bug, full detail in `docs/ERROR_LOG.md`'s
+2026-08-10 "root-owned crypto/ directory" entry.** `blcgen validate`
+passed; `network.sh up` failed at stage 3 (crypto enrollment) with
+`mkdir: cannot create directory '.../crypto/ca-bootstrap': Permission
+denied` — Docker (running as root) had auto-created `crypto/` as a side
+effect of the CA containers' bind mounts starting before
+`bootstrap-crypto.sh`'s own `mkdir -p` ran. Fixed by stopping the
+partially-started containers, wiping the root-owned state, and
+pre-creating `crypto/ca-servers/<org>` for all 4 orgs as `azureuser`
+*before* retrying — so Docker found existing, correctly-owned
+directories instead of auto-creating new root-owned ones.
+
+```bash
+docker compose -f generated/docker-compose-ca.yaml down -v
+sudo rm -rf crypto generated channel-artifacts
+mkdir -p crypto/ca-servers/{BLCOrderer,BLCFounder,InstitutionA,InstitutionB}
+./scripts/network.sh up
+```
+
+Second attempt succeeded cleanly through all 10 stages — 3 orderers, 3
+orgs × 2 peers × 2 (peer+CouchDB), channel `blcchannel` created and
+joined by all 6 peers, membership verified (identical block hash across
+all).
+
+**Chaincode deployment — clean, no new bugs** (this exact deploy path
+was already proven in Phases 7-8; only the target network was new).
+
+```bash
+FOUNDING_MSPS_JSON=$(python3 -c "
+import json, yaml
+net = yaml.safe_load(open('config/network.yaml'))
+print(json.dumps([o['msp'] for o in net['organizations'] if o['status'] == 'founding']))
+")
+./scripts/chaincode.sh deploy institution-cc --init-function InitLedger --init-args "$FOUNDING_MSPS_JSON"
+./scripts/chaincode.sh deploy certificate-cc
+```
+
+**Governance bootstrap — full local parity, not just a minimal 2-org
+setup.** `RegisterInstitution` is bootstrap-only (never exposed via the
+backend's REST API, confirmed by its absence from the route list printed
+at NestJS startup) — invoked directly via `peer chaincode invoke` for
+both founding orgs, then `InstitutionB` (a `member`, not `founding`,
+per `network.yaml`) properly proposed and voted in through the real
+governance flow rather than force-registered:
+
+```bash
+# RegisterInstitution, once per founding org (BLCFounder, InstitutionA),
+# each as that org's own Admin identity — see git history for the full
+# CORE_PEER_*/peer chaincode invoke invocation.
+peer chaincode invoke ... -c '{"function":"RegisterInstitution","Args":["BLC Founder"]}' ...
+peer chaincode invoke ... -c '{"function":"RegisterInstitution","Args":["Institution A"]}' ...
+
+# InstitutionB proposed by BLCFounder, then voted in by both (majority of 2 = 2)
+peer chaincode invoke ... -c '{"function":"ProposeNewMember","Args":["InstitutionBMSP","Institution B"]}' ...
+peer chaincode invoke ... -c '{"function":"CastVote","Args":["<proposalId>","yes"]}' ...   # as BLCFounder
+peer chaincode invoke ... -c '{"function":"CastVote","Args":["<proposalId>","yes"]}' ...   # as InstitutionA — crosses the 2/2 threshold, InstitutionB auto-created
+```
+
+All 3 institutions confirmed `status: active` on the ledger after this —
+matching local dev's governance state exactly, by design (see Decisions
+below on why the full footprint was chosen over the originally-scoped
+minimal one).
+
+**Backend + frontend — built, then run as `systemd` services, not bare
+background processes.** A staging target needs to survive reboots and
+crashes unattended; `nohup`-style processes (fine for local dev) aren't
+appropriate here.
+
+```bash
+cd backend && npm install && npm run build
+# .env.blcfounder / .env.institutiona / .env.institutionb created with
+# fresh (VM-generated, not copied from local) API_KEY values, same
+# shape as the existing local .env.* files.
+sudo systemctl enable --now blc-backend-blcfounder blc-backend-institutiona blc-backend-institutionb
+
+cd ../frontend && npm install && npm run build
+```
+
+**One real bug in the deployment sequence, not the app — `next build`
+failed on first attempt.** `Error: Missing required env var
+BLCFOUNDER_API_KEY` during static page-data collection for
+`/certificates/new` — the frontend's own strict env-var validation
+(`getOrThrow`-style, same pattern as the backend) runs even at build
+time, not just at request time, and `.env.local` hadn't been created
+yet at that point in the sequence. Fixed by creating `.env.local` (keys
+pulled directly from the already-created backend `.env.*` files, so the
+real values never needed retyping or re-display) before rebuilding —
+second attempt succeeded, all 10 routes compiled. Full detail in
+`docs/ERROR_LOG.md`.
+
+```bash
+sudo systemctl enable --now blc-frontend
+```
+
+**Caddy — reverse proxy + real, automatic Let's Encrypt HTTPS, zero
+custom TLS handling.**
+
+```bash
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update && sudo apt-get install -y caddy
+```
+
+`/etc/caddy/Caddyfile`:
+
+```caddyfile
+blc31-staging.westeurope.cloudapp.azure.com {
+    reverse_proxy localhost:3000
+}
+```
+
+```bash
+sudo systemctl reload caddy
+```
+
+Caddy's logs confirmed the full ACME sequence live — new account
+registration, `http-01` challenge solved, certificate obtained — with
+no manual certificate handling anywhere in this setup.
+
+**Verification — from genuinely outside the VM, not just internally.**
+A `curl` run from *inside* the VM's own SSH session returning `200`
+was correctly treated as necessary-but-not-sufficient (it still proves
+DNS/TLS/proxy/app all work, since even same-host traffic to a public
+hostname routes out through the real internet — but doesn't rule out
+some host-specific routing quirk). Re-ran from the admin's own laptop,
+outside any SSH session entirely:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://blc31-staging.westeurope.cloudapp.azure.com/login
+```
+
+`200`, confirmed from the real outside world.
+
+**Closed the loop — `agentic-qa.yml`'s actual blocker.** Set the
+`STAGING_URL` repository variable it already reads via
+`${{ vars.STAGING_URL }}` (confirmed by reading the workflow file
+directly — a plain string, no parsing, no path construction):
+
+```bash
+gh variable set STAGING_URL --body "https://blc31-staging.westeurope.cloudapp.azure.com"
+```
+
+**Decisions made during this phase, not just execution:**
+- **Full 3-org footprint, not the originally-scoped minimal 2-org/
+  1-orderer/1-peer topology.** The minimal footprint was scoped back
+  when VM sizing was still an open question (would anything even fit).
+  Once `F4as_v6` (4 vCPU/8GB) was confirmed working, the resource-fit
+  concern that motivated trimming no longer applied — deploying the
+  same, already-proven `network.yaml`/`local.yaml` as local dev removes
+  a variable (config-editing mistakes) from any future debugging, and
+  gives `agentic-qa` a real 3-institution topology to test
+  cross-institution scenarios against, not an artificially simplified
+  stand-in.
+- **No Load Balancer, single VM with a directly-attached Public IP** —
+  confirmed sufficient and correct per Microsoft's own docs, not an
+  improvised workaround.
+- **DNS label over Let's Encrypt's newer IP-address certificates** —
+  the free, standard, well-tested path over a technically-newer but more
+  operationally fragile one (160-hour cert lifetime vs. 90 days).
+- **`systemd` services, not background processes**, for anything meant
+  to stay up unattended (backend ×3, frontend, Caddy).
+
+**Follow-up, explicitly not done in this phase:** `.github/qa-mcp.json`
+(the Playwright MCP config `agentic-qa.yml` actually needs to drive a
+browser) and `SLACK_WEBHOOK_QUALITY` are both still genuinely missing —
+`STAGING_URL` alone doesn't make `agentic-qa` runnable yet. The
+`northeurope` VNet/subnet/NSG (abandoned mid-region-switch) are orphaned
+but free — cleanup deferred, not forgotten. Security posture of the
+live URL (port 443 open to `Any`, no rate-limiting on the login system,
+per `ARCHITECTURE.md`'s own existing note) was flagged directly to the
+user as an accepted, deliberate tradeoff for a short-lived QA target —
+not something to leave running indefinitely unreviewed.
