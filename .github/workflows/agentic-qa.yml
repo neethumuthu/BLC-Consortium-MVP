@@ -40,6 +40,21 @@ jobs:
       - id: target
         run: echo "url=${{ vars.STAGING_URL }}" >> "$GITHUB_OUTPUT"
 
+      # First live run (2026-08-10) confirmed a real bug: the agent filed a
+      # genuinely good, well-reasoned issue but couldn't apply the `qa-agent`
+      # label — it doesn't exist in this repo, `gh issue create --label`
+      # fails outright against a nonexistent label, and label creation is
+      # outside the agent's own allowedTools (Bash(gh issue:*), not
+      # Bash(gh label:*)). Same fix requirements-nudge.yml already applies
+      # for its own `open-question` label - ensure it exists here too,
+      # once, rather than depending on the agent to create it correctly.
+      - name: Ensure qa-agent label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create qa-agent --repo "${{ github.repository }}" --color D93F0B \
+            --description "Filed by the Ring 3 agentic-qa QA agent" 2>/dev/null || true
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
