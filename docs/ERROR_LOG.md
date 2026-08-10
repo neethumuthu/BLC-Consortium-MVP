@@ -22,6 +22,46 @@ Entry format:
 
 ---
 
+## 2026-08-10 — `agentic-qa`'s first live run: couldn't apply its own `qa-agent` label
+
+**Phase:** 15 — Azure staging deployment (first live test of `agentic-qa.yml`)
+**Symptom:** the agent explored the real staging environment, found a
+genuinely good, well-reasoned defect (issue #8 — governance UI never
+shows per-institution vote status, three spec scenarios cited, root
+cause traced into `governance.go`/the DTO layer, reproduced live with
+exact steps), but the issue was filed with no `qa-agent` label — the
+prompt says `label: qa-agent`, and the workflow's own overall
+`conclusion` reported `success` with no visible error anywhere in the
+log.
+**Command / context:**
+    gh workflow run agentic-qa.yml   # workflow_dispatch, manual live test
+    gh issue view 8 --json labels    # → labels: [] despite the prompt's instruction
+**Root cause:** the `qa-agent` label never existed in this repository at
+all (`gh label list --search qa-agent` returned nothing). `gh issue
+create --label <name>` fails outright against a nonexistent label, and
+the agent's own `allowedTools` only grants `Bash(gh issue:*)`, not
+`Bash(gh label:*)` — it has no way to create the label itself even if it
+tried. The agent's own issue body self-reported this precisely: "Label
+`qa-agent` does not exist yet in this repo and could not be created
+(label creation is outside this agent's permitted `gh` scope) — please
+add the label manually." A "success" `conclusion` did not mean nothing
+went wrong — same lesson as every other Claude-driven workflow this
+project has live-tested.
+**Resolution:** created the label for real (`gh label create qa-agent
+--color D93F0B --description "Filed by the Ring 3 agentic-qa QA agent"`),
+applied it retroactively to issue #8, and added an "Ensure qa-agent
+label exists" step to `agentic-qa.yml` itself (`gh label create ... ||
+true`, same idempotent pattern `requirements-nudge.yml` already uses for
+its own `open-question` label) so future runs never depend on the label
+already existing.
+**Follow-up:** none open — this is now the same self-healing pattern
+already proven elsewhere in this repo. Worth remembering as a general
+principle for any future Claude-driven workflow that files
+issues/PRs with a specific label: create the label in the workflow
+itself, don't assume it exists or that the agent can create it.
+
+---
+
 ## 2026-08-10 — Frontend build failed: missing `.env.local` on the staging VM
 
 **Phase:** 15 — Azure staging deployment
