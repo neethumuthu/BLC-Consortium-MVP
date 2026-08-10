@@ -22,6 +22,34 @@ Entry format:
 
 ---
 
+## 2026-08-10 — `agentic-qa`'s Slack step would have renotified every night for the same open issue
+
+**Phase:** 15 — Azure staging deployment
+**Symptom:** Dominik saw the real Slack message from the manual test run
+and asked what it was — surfaced, in explaining it, that the Slack step
+had `if: always()` with no gate on whether anything *new* happened.
+Issue #8 (already open, unresolved) would trigger the exact same
+"QA run: success — findings: [link]" message every single night for as
+long as it stays open, not just once when first found.
+**Command / context:** no failed command — a design review prompted by
+a real stakeholder question, not a live-test discovery.
+**Root cause:** identical class of bug already found and fixed on
+`context-gardener.yml` earlier the same day (notify on every
+`success()` regardless of outcome, not on whether the run actually
+produced something new) — just not yet recognized as the same pattern
+in this second workflow until asked about directly.
+**Resolution:** added a before/after snapshot of `qa-agent`-labeled
+issue numbers (`gh issue list ... | sort -n`, diffed with `comm -13`)
+so the Slack step only fires when a genuinely new issue number appears
+this run. Failure still notifies separately (`if: failure()`, its own
+message) — silence on "ran fine, nothing new" is the goal; silence on a
+real crash would be worse than the noise it replaced.
+**Follow-up:** worth checking any *future* Claude-driven workflow in
+this repo for the same "notify on always(), not on outcome" default
+before it ships, rather than finding it three times.
+
+---
+
 ## 2026-08-10 — `agentic-qa`'s first live run: couldn't apply its own `qa-agent` label
 
 **Phase:** 15 — Azure staging deployment (first live test of `agentic-qa.yml`)
