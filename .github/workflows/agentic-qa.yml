@@ -55,6 +55,21 @@ jobs:
           gh label create qa-agent --repo "${{ github.repository }}" --color D93F0B \
             --description "Filed by the Ring 3 agentic-qa QA agent" 2>/dev/null || true
 
+      # Snapshot before the agent runs, compared against the same query
+      # after it finishes, so the Slack step below can tell "this run found
+      # something new" apart from "this run found nothing, same as every
+      # other night" - same class of fix already applied to
+      # context-gardener.yml (only notify on an actual PR, not on every
+      # success() regardless of outcome). Without this, an already-open
+      # issue like #8 would trigger the identical Slack message every
+      # single night for as long as it stays unresolved.
+      - name: Snapshot qa-agent issues before this run
+        id: before
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --label qa-agent --state all --json number --jq '.[].number' | sort -n > /tmp/qa-agent-before.txt
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -69,10 +84,38 @@ jobs:
             open issue already covers it. Finish with a one-paragraph summary.
           claude_args: '--mcp-config .github/qa-mcp.json --allowedTools "mcp__playwright__*,Read,Grep,Bash(gh issue:*)"'
 
-      - uses: slackapi/slack-github-action@v2
-        if: always()
+      - name: Check whether this run actually filed a new issue
+        id: after
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --label qa-agent --state all --json number --jq '.[].number' | sort -n > /tmp/qa-agent-after.txt
+          NEW=$(comm -13 /tmp/qa-agent-before.txt /tmp/qa-agent-after.txt)
+          if [ -n "$NEW" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "new_issues=$(echo "$NEW" | sed 's/^/#/' | paste -sd, -)" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify Slack - new finding(s)
+        if: steps.after.outputs.found == 'true'
+        uses: slackapi/slack-github-action@v2
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_QUALITY }}
           webhook-type: incoming-webhook
           payload: |
-            text: "QA run (nightly) on ${{ steps.target.outputs.url }}: ${{ job.status }} — findings: ${{ github.server_url }}/${{ github.repository }}/issues?q=is%3Aissue+is%3Aopen+label%3Aqa-agent"
+            text: "agentic-qa found new issue(s) on ${{ steps.target.outputs.url }}: ${{ steps.after.outputs.new_issues }} — ${{ github.server_url }}/${{ github.repository }}/issues?q=is%3Aissue+is%3Aopen+label%3Aqa-agent"
+
+      # Silence on "ran fine, nothing new" is the whole point of this fix -
+      # but silence on a genuine crash would be worse than the noise it
+      # replaced, so failure still notifies, just with a different message.
+      - name: Notify Slack - run failed
+        if: failure()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_QUALITY }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "agentic-qa run FAILED on ${{ steps.target.outputs.url }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
