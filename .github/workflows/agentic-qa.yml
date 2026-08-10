@@ -1,0 +1,63 @@
+# Ring 3 — goal-driven QA against the staging environment.
+#
+# Added from the starter-kit template (2026-08-10), not just copied as-is —
+# two fixes applied up front rather than left to be "discovered" via a live
+# run, since both are already-proven requirements from the other four
+# Claude-driven workflows in this repo, not new/uncertain territory:
+#   1. id-token: write - missing from the template. Confirmed live
+#      (context-gardener.yml/context-drift-check.yml) that claude-code-action
+#      fails immediately ("Could not fetch an OIDC token") without it.
+#   2. claude_code_oauth_token - the template only had anthropic_api_key.
+#      All four other Claude-driven workflows in this repo use
+#      CLAUDE_CODE_OAUTH_TOKEN; matching that rather than introducing a
+#      fifth workflow with a different auth path.
+#
+# The template's `pull_request` trigger assumed per-PR preview-deploy
+# infrastructure (Vercel/Render/etc.) that doesn't exist here - only one
+# persistent staging environment does (blc31-staging.westeurope.cloudapp.azure.com,
+# see docs/BUILD_LOG.md's Phase 15). Dropped `pull_request` entirely rather
+# than point it at the shared staging URL (would let a PR run and the nightly
+# run collide) or ship a known-broken placeholder target.
+name: agentic-qa
+on:
+  schedule:
+    - cron: '0 3 * * *'        # nightly exploratory regression on staging
+  workflow_dispatch: {}         # for manual live-testing, per the same
+                                 # pattern as the other Claude-driven
+                                 # workflows in this repo
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: target
+        run: echo "url=${{ vars.STAGING_URL }}" >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the Ring 3 QA agent. Target: ${{ steps.target.outputs.url }}
+            Execute every goal under "Ring 3 QA goals" in context/codebase/TESTING.md.
+            Goals are intents — plan your own paths, including unhappy paths.
+            For each finding: severity, reproduction steps, expected vs actual
+            (cite the spec scenario in openspec/specs/ if one exists).
+            File one GitHub issue per distinct defect (label: qa-agent) unless an
+            open issue already covers it. Finish with a one-paragraph summary.
+          claude_args: '--mcp-config .github/qa-mcp.json --allowedTools "mcp__playwright__*,Read,Grep,Bash(gh issue:*)"'
+
+      - uses: slackapi/slack-github-action@v2
+        if: always()
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_QUALITY }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "QA run (nightly) on ${{ steps.target.outputs.url }}: ${{ job.status }} — findings: ${{ github.server_url }}/${{ github.repository }}/issues?q=is%3Aissue+is%3Aopen+label%3Aqa-agent"
