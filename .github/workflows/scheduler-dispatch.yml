@@ -10,8 +10,14 @@
 name: scheduler-dispatch
 on:
   schedule:
-    - cron: '0 6 * * *'   # daily, 6am UTC. context-gardener runs every time
-                          # this fires; context-drift-check gates itself down
+    - cron: '0 6 * * 1-5'   # weekdays only, 6am UTC - matches
+                          # requirements-nudge.yml's existing weekday-only
+                          # precedent. Added after a real weekend run fired
+                          # on both Sat and Sun with nothing to report,
+                          # confirmed via run history (0892bee, unchanged
+                          # HEAD both days) - not assumed from the noise
+                          # alone. context-gardener runs every time this
+                          # fires; context-drift-check gates itself down
                           # to Monday only in its own job, rather than this
                           # workflow needing a second, separate cron.
   workflow_dispatch: {}

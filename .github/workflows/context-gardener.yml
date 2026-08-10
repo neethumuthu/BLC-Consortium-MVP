@@ -83,10 +83,25 @@ jobs:
           # openspec/changes/archive/.
           claude_args: '--allowedTools "Bash(git:*),Bash(gh pr:*),Bash(openspec:*),Bash(mv:*),Bash(mkdir:*),Read,Write,Edit,Grep,Glob"'
 
-      - uses: slackapi/slack-github-action@v2
+      # Checks the deterministic branch name the prompt above always uses
+      # for a real PR, rather than notifying on every success() regardless
+      # of whether anything happened - added after two weekend runs (Sat/Sun,
+      # nothing changed on main either day) each posted the same "if opened"
+      # message with nothing to actually review, confirmed via run history.
+      - name: Check whether a context PR was actually opened
+        id: check_pr
         if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_URL=$(gh pr list --head "context/gardener-${{ github.sha }}" --json url --jq '.[0].url // empty')
+          echo "opened=$([ -n "$PR_URL" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - uses: slackapi/slack-github-action@v2
+        if: steps.check_pr.outputs.opened == 'true'
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_PIPELINE }}
           webhook-type: incoming-webhook
           payload: |
-            text: "Context-gardener ran for `${{ github.sha }}` — if a context PR was opened, steward review needed: ${{ github.server_url }}/${{ github.repository }}/pulls?q=is%3Apr+is%3Aopen+label%3Acontext"
+            text: "Context-gardener opened a PR for `${{ github.sha }}` — steward review needed: ${{ steps.check_pr.outputs.pr_url }}"
