@@ -34,7 +34,7 @@ An active institution SHALL be able to cast a yes/no vote on an open membership 
 
 #### Scenario: Double-voting is rejected
 - **WHEN** an institution that has already voted on a proposal attempts to vote on it again
-- **THEN** the second vote is rejected and the UI shows the institution's existing vote rather than allowing a change
+- **THEN** the second vote is rejected, the UI shows the institution's existing recorded decision ("voted yes" / "voted no") rather than a generic error, and the voting control is replaced by that decision rather than remaining enabled
 
 #### Scenario: Voting on a closed proposal is rejected
 - **WHEN** a vote is attempted on a proposal that is no longer Open (already Approved or Rejected)
@@ -45,6 +45,15 @@ An active institution SHALL be able to see which membership proposals are curren
 
 #### Scenario: Pending proposals are listed
 - **WHEN** an active institution views the governance section of the UI
-- **THEN** every currently-Open proposal is listed with applicant name, current vote tally, and whether this institution has already voted
+- **THEN** every currently-Open proposal is listed with applicant name, current vote tally, and, for each proposal, one of: "not yet voted", or the institution's own recorded decision ("voted yes" / "voted no") if it has already voted on that proposal
 
-<!-- How this requirement is actually satisfied (a new chaincode query vs. an off-chain index) is a design decision, not a spec-level behavior -- see design.md and the gap noted in proposal.md's Impact section. -->
+### Requirement: View resolved proposals
+An institution SHALL be able to discover a membership proposal's existence and final outcome after it resolves (Approved or Rejected), even if that institution never voted on it before it closed — not only institutions that already know its proposal ID.
+
+#### Scenario: A resolved proposal remains discoverable
+- **WHEN** a membership proposal resolves (reaches Approved or Rejected status) before an active institution has voted on it
+- **THEN** that institution can still find the proposal from the same place it would look for governance activity, and see its applicant name, final status, and final vote tally
+
+#### Scenario: A resolved proposal shows its outcome, not a voting control
+- **WHEN** an active institution views a resolved proposal it did not get to vote on
+- **THEN** the UI shows the proposal's final status and tally, and does not offer a voting control for it
