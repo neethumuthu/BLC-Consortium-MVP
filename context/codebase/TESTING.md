@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-07-29
+last_verified: 2026-08-11
 source: code-derived
 confidence: medium
 owner: QA engineer
