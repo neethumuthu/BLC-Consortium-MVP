@@ -20,11 +20,17 @@
 # run collide) or ship a known-broken placeholder target.
 name: agentic-qa
 on:
-  schedule:
-    - cron: '0 3 * * *'        # nightly exploratory regression on staging
-  workflow_dispatch: {}         # for manual live-testing, per the same
-                                 # pattern as the other Claude-driven
-                                 # workflows in this repo
+  # Nightly schedule disabled 2026-08-11: two runs (2026-08-10, 2026-08-11)
+  # each completed a real ProposeNewMember + enough real CastVotes to reach
+  # quorum, logged in as the real BLCFounder account (its cosmetic-login
+  # credentials are readable straight out of frontend/src/lib/institutions.ts).
+  # That created two permanent, fully "active" institutions on the staging
+  # ledger and changed the consortium's real majority-vote threshold. Off
+  # until the agent is switched to a read-only account that can't complete
+  # a real vote/proposal/certificate action - see docs/ERROR_LOG.md.
+  # schedule:
+  #   - cron: '0 3 * * *'
+  workflow_dispatch: {}         # manual live-testing only, for now
 
 jobs:
   qa:
