@@ -54,4 +54,12 @@ export class InstitutionsService {
     const result = await contract.evaluateTransaction('GetProposal', proposalId);
     return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto;
   }
+
+  async getResolvedProposals(): Promise<MembershipProposalDto[]> {
+    const contract = this.fabricGateway.getInstitutionContract();
+    const result = await contract.evaluateTransaction('GetResolvedProposals');
+    // Same as GetOpenProposals/GetAllInstitutions: the Go implementation
+    // initializes its slice as []*ProposalWithVoteStatus{}, never nil.
+    return JSON.parse(utf8Decoder.decode(result)) as MembershipProposalDto[];
+  }
 }

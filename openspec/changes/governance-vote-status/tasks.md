@@ -9,9 +9,9 @@
 
 ## 2. Backend
 
-- [ ] 2.1 Add `callerVoteDecision` (optional) to `MembershipProposalDto`
-- [ ] 2.2 Wire the existing `GET /institutions/proposals` and `GET /institutions/proposals/:proposalId` endpoints to the updated chaincode responses (should require no signature changes, only the new field flowing through)
-- [ ] 2.3 Add `GET /institutions/proposals/resolved` wrapping the new `GetResolvedProposals` query
+- [x] 2.1 Add `callerVoteDecision` (optional) to `MembershipProposalDto`
+- [x] 2.2 Wire the existing `GET /institutions/proposals` and `GET /institutions/proposals/:proposalId` endpoints to the updated chaincode responses — required no signature changes, confirmed via `tsc`/`nest build` and a live call against the real local network
+- [x] 2.3 Add `GET /institutions/proposals/resolved` wrapping the new `GetResolvedProposals` query — declared before `proposals/:proposalId`, same route-ordering requirement this controller already had one level up. Verified live: real backend instance, real local network, `callerVoteDecision` correctly present/absent per BLCFounder's actual voting history.
 
 ## 3. Frontend
 

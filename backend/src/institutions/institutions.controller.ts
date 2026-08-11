@@ -46,6 +46,17 @@ export class InstitutionsController {
     return this.institutionsService.getOpenProposals();
   }
 
+  // Same route-ordering requirement as 'proposals' above, one level
+  // deeper: 'proposals/resolved' must be declared before
+  // 'proposals/:proposalId' or the wildcard would shadow it, treating
+  // "resolved" as a proposalId value.
+  @Get('proposals/resolved')
+  @ApiOperation({ summary: 'List every membership proposal that has resolved (approved or rejected)' })
+  @ApiResponse({ status: 200, type: [MembershipProposalDto] })
+  getResolvedProposals(): Promise<MembershipProposalDto[]> {
+    return this.institutionsService.getResolvedProposals();
+  }
+
   @Get('proposals/:proposalId')
   @ApiOperation({ summary: 'Look up a membership proposal by ID' })
   @ApiParam({ name: 'proposalId' })

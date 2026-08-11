@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// Mirrors chaincode/institution-cc/model.go's MembershipProposal struct
-// exactly - nothing added, nothing renamed.
+// Mirrors chaincode/institution-cc/model.go's ProposalWithVoteStatus -
+// MembershipProposal's fields plus the calling institution's own vote,
+// computed fresh per call by the chaincode (see queries.go's
+// withCallerVoteStatus), never stored on the ledger asset itself.
 export class MembershipProposalDto {
   @ApiProperty()
   proposalId!: string;
@@ -35,4 +37,10 @@ export class MembershipProposalDto {
 
   @ApiProperty()
   docType!: string;
+
+  @ApiPropertyOptional({
+    enum: ['yes', 'no'],
+    description: 'This instance\'s own institution\'s vote on this proposal, if it has voted. Absent if it has not.',
+  })
+  callerVoteDecision?: string;
 }
