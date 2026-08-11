@@ -22,6 +22,59 @@ Entry format:
 
 ---
 
+## 2026-08-11 — `agentic-qa` completed real governance votes on staging, twice
+
+**Phase:** 15 — Azure staging deployment (post-launch hardening)
+**Symptom:** two nightly/manual runs (2026-08-10, 2026-08-11) each logged
+in as the real `BLCFounder` account (cosmetic-login credentials are
+readable straight out of `frontend/src/lib/institutions.ts`) and, while
+literally executing `TESTING.md`'s "Ring 3 QA goals," completed a real
+`ProposeNewMember` plus enough real `CastVote`s to reach quorum. Result:
+two permanent, fully `"active"` institutions on the shared staging
+ledger — `InstitutionQAMSP` ("Institution QA") and a second one from the
+2026-08-11 run ("QA Ring3 Candidate Institution") — and a changed real
+majority-vote threshold for the whole consortium (`requiredVotesToApprove`
+counts active institutions at proposal-creation time; went from
+`3/2+1=2` to `5/2+1=3`).
+**Command / context:** discovered via a headless-browser check of the
+real `/institutions` page on staging, prompted by a routine "is that
+QA institution actually cleaned up" follow-up — not caught proactively.
+**Root cause:** `Institution.Status == "active"` is the single point of
+authorization for `ProposeNewMember`/`CastVote`/`IssueCertificate`
+across both chaincodes, and flipping it requires no real Fabric identity
+for the *candidate* — only enough real, already-active callers voting.
+`agentic-qa.yml`'s prompt told the agent to "execute" the QA goals, which
+literally include propose/vote scenarios; nothing constrained which
+account it logged in with, so it used whatever real credentials it could
+find in the repo.
+**Resolution:** disabled the nightly schedule immediately
+(`workflow_dispatch` only) while fixing this. Added an optional
+`READ_ONLY_API_KEY` to `ApiKeyGuard` — authenticated but GET-only, every
+mutating route rejects it with 403 before it reaches the chaincode — and
+a matching `QA_GUEST` account in `institutions.ts`. `agentic-qa.yml`'s
+prompt now hands the agent that login directly and explicitly, and
+`TESTING.md`'s goals are reframed so a 403 on a write action is the
+correct, expected result for this account, not a defect. Verified live
+two ways before re-enabling the schedule: a direct curl against the
+staging backend with the read-only key (403, "This is a read-only
+credential - it cannot perform write actions"), and a full browser
+walkthrough of the real propose flow with a real session (same 403
+rendered inline, session left intact, no proposal created).
+**Follow-up:** checked whether `institution-cc` has any function to
+deactivate, suspend, or remove an already-active institution — it
+doesn't (only `InitLedger`/`RegisterInstitution`/`ProposeNewMember`/
+`CastVote` ever write an `Institution` record, and none of them can
+change or delete one once created). Decision: leave `InstitutionQAMSP`
+and the second QA-created institution as permanent fixtures on staging
+rather than build a new deactivate function just for this — staging
+exists to be exercised, and a known non-founding institution is
+arguably a useful fixture for future testing anyway. The quorum
+threshold (3 votes, not 2) is now a permanent fact of staging's current
+state, not a bug to chase — worth remembering if a future real proposal
+on staging seems to need "one more vote than expected."
+
+---
+
 ## 2026-08-10 — `agentic-qa`'s Slack step would have renotified every night for the same open issue
 
 **Phase:** 15 — Azure staging deployment
