@@ -15,9 +15,9 @@
 
 ## 3. Frontend
 
-- [ ] 3.1 On the governance page's open-proposals list, replace the Yes/No voting control with the institution's own recorded decision once `callerVoteDecision` is present (covers both "already voted, page reload" and "double-vote attempt just got rejected" — same UI state either way)
-- [ ] 3.2 Add a "Recently closed" section to the governance page, populated from 2.3, showing applicant name, final status, and final tally per resolved proposal — no voting control
-- [ ] 3.3 Surface the double-vote rejection using the response's own `callerVoteDecision` rather than the current generic message
+- [x] 3.1 On the governance page's open-proposals list, replace the Yes/No voting control with the institution's own recorded decision once `callerVoteDecision` is present. Verified live: voted a real "yes" on a real open proposal through the actual UI, reloaded, row showed "You voted Yes" with no buttons; a second proposal BLCFounder hadn't voted on still showed working Yes/No buttons.
+- [x] 3.2 Add a "Recently closed" section to the governance page, populated from 2.3, showing applicant name, final status, and final tally per resolved proposal — no voting control. Verified live: all 3 real resolved proposals rendered correctly (one rejected, two approved), no Action column.
+- [x] 3.3 Surface the double-vote rejection using the response's own `callerVoteDecision` rather than the current generic message. Achieved by revalidating on rejection too (not just success), so a double-vote attempt refetches the proposal and the UI naturally shows the recorded decision instead of the generic "You've already voted" text — the voting control disappears once the decision is known, so the UI no longer offers a path to even attempt a double-vote. Confirmed the backend itself still independently rejects a genuine double-vote at the chaincode layer (409, direct API call bypassing the UI) as defense-in-depth.
 
 ## 4. Verification
 

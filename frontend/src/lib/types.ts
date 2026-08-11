@@ -45,4 +45,5 @@ export interface MembershipProposal {
   createdAt: string;
   resolvedAt?: string;
   docType: string;
+  callerVoteDecision?: "yes" | "no";
 }

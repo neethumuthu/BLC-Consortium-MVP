@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Vote, UserPlus } from "lucide-react";
+import { AlertTriangle, Vote, UserPlus, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -16,10 +16,14 @@ export default async function GovernancePage() {
   const session = await requireSession();
 
   let proposals: MembershipProposal[] = [];
+  let resolvedProposals: MembershipProposal[] = [];
   let error: string | undefined;
 
   try {
-    proposals = await backendFetch<MembershipProposal[]>(session.institutionId, "/institutions/proposals");
+    [proposals, resolvedProposals] = await Promise.all([
+      backendFetch<MembershipProposal[]>(session.institutionId, "/institutions/proposals"),
+      backendFetch<MembershipProposal[]>(session.institutionId, "/institutions/proposals/resolved"),
+    ]);
   } catch (err) {
     error = err instanceof BackendError ? humanizeBackendError(err.message) : "Something went wrong loading open proposals.";
   }
@@ -80,6 +84,8 @@ export default async function GovernancePage() {
                     <TableCell className="text-right">
                       {isOwnApplication ? (
                         <span className="text-xs text-muted-foreground">Your own application</span>
+                      ) : proposal.callerVoteDecision ? (
+                        <VotedIndicator decision={proposal.callerVoteDecision} />
                       ) : (
                         <VoteButtons proposalId={proposal.proposalId} />
                       )}
@@ -91,6 +97,53 @@ export default async function GovernancePage() {
           </Table>
         </div>
       )}
+
+      {!error && resolvedProposals.length > 0 ? (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Recently closed</h2>
+            <p className="text-sm text-muted-foreground">
+              Proposals that have already been decided — including any resolved before you had a chance to vote.
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Applicant</TableHead>
+                  <TableHead>Proposed By</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Final Votes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resolvedProposals.map((proposal) => (
+                  <TableRow key={proposal.proposalId}>
+                    <TableCell className="font-medium">{proposal.applicantName}</TableCell>
+                    <TableCell className="text-muted-foreground">{displayNameFor(proposal.proposedBy)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={proposal.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {proposal.votesFor} for / {proposal.votesAgainst} against (of {proposal.totalEligibleVoters})
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function VotedIndicator({ decision }: { decision: "yes" | "no" }) {
+  const Icon = decision === "yes" ? ThumbsUp : ThumbsDown;
+  return (
+    <span className="inline-flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+      <Icon className="size-3.5" />
+      You voted {decision === "yes" ? "Yes" : "No"}
+    </span>
   );
 }

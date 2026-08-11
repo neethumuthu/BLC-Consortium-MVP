@@ -66,6 +66,12 @@ export async function castVoteAction(
     );
   } catch (error) {
     if (error instanceof BackendError) {
+      // Revalidate even on rejection, not just success: a double-vote
+      // rejection in particular should surface as "you already voted
+      // yes/no" (read back from the now-refetched proposal's own
+      // callerVoteDecision), not a generic error string - see
+      // governance-vote-status's design.md.
+      revalidatePath("/governance");
       return { error: humanizeBackendError(error.message) };
     }
     throw error;
