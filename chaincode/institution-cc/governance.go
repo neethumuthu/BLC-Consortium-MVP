@@ -235,14 +235,6 @@ func putProposal(ctx contractapi.TransactionContextInterface, proposal *Membersh
 // the state database, matching Phase 5's network configuration) since
 // this is a query on docType+applicantId+status, not a lookup by a
 // single deterministic key.
-//
-// Follow-up: CastVote has no code path that ever sets Status to
-// "rejected" yet — the design doc lists it as a valid Proposal status
-// and implies CastVote "resolves" the proposal, but only specifies the
-// approval case. An unpopular proposal currently just stays "open"
-// forever. This function is written correctly in anticipation of
-// rejection existing; implementing when/how a proposal actually becomes
-// rejected is still an open gap.
 func hasLiveProposalForApplicant(ctx contractapi.TransactionContextInterface, applicantID string) (bool, error) {
 	selector := fmt.Sprintf(`{"selector":{"docType":"%s","applicantId":"%s","status":{"$in":["%s","%s"]}}}`,
 		docTypeProposal, applicantID, proposalStatusOpen, proposalStatusApproved)
