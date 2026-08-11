@@ -111,7 +111,7 @@ ORDERER_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${NETWORK_YAM
 ORDERER_GENERAL_PORT=$(python3 -c "import yaml; print(yaml.safe_load(open('${LOCAL_YAML}'))['orderer']['nodes'][0]['general_port'])")
 ORDERER_TLS_CA="${CRYPTO_DIR}/organizations/${ORDERER_NAME}/orderers/orderer0/tls/ca.pem"
 
-CC_VERSION="1.1"
+CC_VERSION="1.2"
 # CC_SEQUENCE must match this channel's ACTUAL commit history, not a
 # fixed value — Fabric enforces sequence numbers strictly incrementing
 # by exactly 1 from whatever's already committed (0 on a channel where a
@@ -123,7 +123,7 @@ CC_VERSION="1.1"
 # resets that history, so the first-ever commit on a new channel must be
 # sequence 1 regardless of version string. Set this to match whatever
 # this specific channel's real history actually is before deploying.
-CC_SEQUENCE="1"
+CC_SEQUENCE="2"
 # CCAAS_PORT now lives in lib/chaincode.sh (shared with org-add.sh).
 
 CURRENT_STAGE=0
