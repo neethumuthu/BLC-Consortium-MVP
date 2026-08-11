@@ -21,9 +21,9 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Verify live against the real network (not just unit tests), reproducing issue #8's exact three scenarios and confirming each is now fixed:
-  - Open proposal, cast a vote, reload — own decision shown, voting control gone
-  - Attempt a double-vote — rejection shows the existing decision, not a generic message
-  - A proposal resolves before an institution votes on it — that institution can find it afterward (final status + tally, no voting control), not just proposals it already knew the ID of
-- [ ] 4.2 Confirm `callerVoteDecision` genuinely reflects the *calling* institution's own vote, not any institution's — verified by casting votes from two different real backend instances (e.g. BLCFounder and InstitutionA) on the same proposal and confirming each instance's own `GET /institutions/proposals` shows only its own decision, not the other's
-- [ ] 4.3 Close GitHub issue #8, referencing this change
+- [x] 4.1 Verified live on staging (not just local, not just unit tests), reproducing issue #8's exact three scenarios and confirming each is now fixed:
+  - Open proposal, cast a vote as BLCFounder, reload — row showed "You voted Yes", no buttons
+  - Double-vote attempted directly against the backend (bypassing the UI, which no longer offers a path to it) — 409, "BLCFounderMSP has already voted on proposal ..."
+  - The 3 real proposals that resolved before this change existed (including the two from the earlier read-only-credential incident) are all correctly discoverable in "Recently closed" with final status/tally, no voting control
+- [x] 4.2 Confirmed `callerVoteDecision` reflects the *calling* institution's own vote, not any institution's — cast real votes from two different real accounts (BLCFounder "yes", InstitutionA "no") on the same live proposal on staging: InstitutionA's own view showed "You voted No", BLCFounder's own view still correctly showed "You voted Yes", each unaffected by the other's vote
+- [x] 4.3 Close GitHub issue #8, referencing this change
