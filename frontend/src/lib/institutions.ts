@@ -56,6 +56,21 @@ export const INSTITUTIONS: InstitutionAccount[] = [
     baseUrl: "http://localhost:3003",
     apiKey: requireEnv("INSTITUTIONB_API_KEY"),
   },
+  // Not a real institution/MSP - a guest login for agentic-qa (added
+  // 2026-08-11) and any human who just wants to look around. Points at
+  // BLCFounder's instance (read data is shared ledger state, identical
+  // regardless of which instance answers it) but authenticates with
+  // READ_ONLY_API_KEY instead of BLCFOUNDER_API_KEY, so every mutating
+  // route (propose/vote/issue/revoke/rotate) is rejected by that
+  // instance's ApiKeyGuard with a 403, before it reaches the chaincode.
+  {
+    institutionId: "QA_GUEST",
+    displayName: "QA Guest (read-only)",
+    email: "qa-guest@blc31.internal",
+    password: "QaGuest!ReadOnly-8f2c",
+    baseUrl: "http://localhost:3001",
+    apiKey: requireEnv("QA_GUEST_API_KEY"),
+  },
 ];
 
 export function findByCredentials(email: string, password: string): InstitutionAccount | undefined {
