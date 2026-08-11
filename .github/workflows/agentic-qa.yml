@@ -83,11 +83,12 @@ jobs:
           prompt: |
             You are the Ring 3 QA agent. Target: ${{ steps.target.outputs.url }}
             Log in ONLY with these credentials: email "qa-guest@blc31.internal",
-            password from frontend/src/lib/institutions.ts's QA_GUEST account. Do
-            not log in as any other institution, even if you find other real
-            credentials elsewhere in the repo — this account is deliberately
-            read-only (see context/codebase/TESTING.md's 2026-08-11 update) and
-            must stay that way.
+            password "QaGuest!ReadOnly-8f2c" (the QA_GUEST account in
+            frontend/src/lib/institutions.ts). Do not log in as any other
+            institution, even if you find other real credentials elsewhere in
+            the repo — this account is deliberately read-only (see
+            context/codebase/TESTING.md's 2026-08-11 update) and must stay that
+            way.
             Execute every goal under "Ring 3 QA goals" in context/codebase/TESTING.md,
             per that same update: for any goal describing a write action
             (propose/vote/issue/revoke/rotate), a 403 response is the correct,
