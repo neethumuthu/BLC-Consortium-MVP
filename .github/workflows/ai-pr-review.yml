@@ -28,6 +28,16 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # PR #9 (context-gardener's first real PR) failed with "Workflow
+          # initiated by non-human actor: claude (type: Bot)" - the action
+          # refuses to act on any PR whose author isn't human unless its bot
+          # username is explicitly allowed. context-gardener.yml opens its
+          # PRs as exactly that bot identity, so every PR it ever opens
+          # would fail this review permanently without this. Named
+          # explicitly ("claude", not "*") rather than trusting every bot -
+          # no reason to widen this further than the one bot this repo
+          # actually runs.
+          allowed_bots: "claude"
           # On @claude mentions the action handles the request interactively.
           # On PR events, run the structured Ring 2 review:
           prompt: |
