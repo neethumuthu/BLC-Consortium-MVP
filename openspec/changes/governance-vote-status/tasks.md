@@ -1,0 +1,28 @@
+## 1. Chaincode
+
+- [x] 1.1 Add a `ProposalWithVoteStatus`-shaped response wrapper (existing `MembershipProposal` fields + `callerVoteDecision` `"yes"`/`"no"`/absent) computed via a direct `GetState` lookup on the existing `voteKey(proposalID, callerMSP)` composite key — per design.md's Decisions, not a new stored field on `MembershipProposal` itself. Fields duplicated rather than embedded, to avoid relying on unproven contractapi reflection behavior for an embedded struct.
+- [x] 1.2 Apply that wrapper to `GetOpenProposals` and `GetProposal`'s return values
+- [x] 1.3 Add `GetResolvedProposals` — same CouchDB rich-query pattern as `GetOpenProposals`, selecting `status: {"$in": ["approved", "rejected"]}` — returning the same wrapper shape
+- [x] 1.4 Chaincode tests: `callerVoteDecision` absent when caller hasn't voted, correct `"yes"`/`"no"` when it has, for `GetOpenProposals`, `GetProposal`, and the new `GetResolvedProposals`; `GetResolvedProposals` returns empty/mixed/all-resolved cases correctly (same shape of test `GetOpenProposals` already has). 6 new tests, all passing; full existing suite (29 prior tests) still passes unchanged.
+- [ ] 1.5 Bump chaincode version and redeploy across all institution peers, verified independently before backend work depends on it — same order the original voting-governance-ui change used. **STOP — confirm before running, on local dev network first and staging second, never simultaneously.**
+
+## 2. Backend
+
+- [ ] 2.1 Add `callerVoteDecision` (optional) to `MembershipProposalDto`
+- [ ] 2.2 Wire the existing `GET /institutions/proposals` and `GET /institutions/proposals/:proposalId` endpoints to the updated chaincode responses (should require no signature changes, only the new field flowing through)
+- [ ] 2.3 Add `GET /institutions/proposals/resolved` wrapping the new `GetResolvedProposals` query
+
+## 3. Frontend
+
+- [ ] 3.1 On the governance page's open-proposals list, replace the Yes/No voting control with the institution's own recorded decision once `callerVoteDecision` is present (covers both "already voted, page reload" and "double-vote attempt just got rejected" — same UI state either way)
+- [ ] 3.2 Add a "Recently closed" section to the governance page, populated from 2.3, showing applicant name, final status, and final tally per resolved proposal — no voting control
+- [ ] 3.3 Surface the double-vote rejection using the response's own `callerVoteDecision` rather than the current generic message
+
+## 4. Verification
+
+- [ ] 4.1 Verify live against the real network (not just unit tests), reproducing issue #8's exact three scenarios and confirming each is now fixed:
+  - Open proposal, cast a vote, reload — own decision shown, voting control gone
+  - Attempt a double-vote — rejection shows the existing decision, not a generic message
+  - A proposal resolves before an institution votes on it — that institution can find it afterward (final status + tally, no voting control), not just proposals it already knew the ID of
+- [ ] 4.2 Confirm `callerVoteDecision` genuinely reflects the *calling* institution's own vote, not any institution's — verified by casting votes from two different real backend instances (e.g. BLCFounder and InstitutionA) on the same proposal and confirming each instance's own `GET /institutions/proposals` shows only its own decision, not the other's
+- [ ] 4.3 Close GitHub issue #8, referencing this change

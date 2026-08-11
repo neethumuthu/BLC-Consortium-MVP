@@ -75,6 +75,33 @@ type MembershipProposal struct {
 	DocType    string `json:"docType"`
 }
 
+// ProposalWithVoteStatus is MembershipProposal plus the *calling*
+// institution's own vote on it, if any — never stored on the ledger
+// itself (the same proposal asset must not have a different shape
+// depending on who reads it; see queries.go's withCallerVoteStatus).
+// Fields are duplicated rather than embedding MembershipProposal:
+// contractapi's reflection-based response schema generation has already
+// bitten this project once on a struct-shape assumption (see
+// Institution.ApprovedBy's comment above) - explicit fields avoid
+// relying on how contractapi treats an embedded/anonymous struct field,
+// which has not been proven safe here.
+type ProposalWithVoteStatus struct {
+	ProposalID          string `json:"proposalId"`
+	ApplicantID         string `json:"applicantId"`
+	ApplicantName       string `json:"applicantName"`
+	ProposedBy          string `json:"proposedBy"`
+	Status              string `json:"status"`
+	VotesFor            int    `json:"votesFor"`
+	VotesAgainst        int    `json:"votesAgainst"`
+	TotalEligibleVoters int    `json:"totalEligibleVoters"`
+	CreatedAt           string `json:"createdAt"`
+	ResolvedAt          string `json:"resolvedAt,omitempty" metadata:"resolvedAt,optional"`
+	DocType             string `json:"docType"`
+	// Absent if the calling institution has not voted on this proposal;
+	// "yes" or "no" (voteDecisionYes/voteDecisionNo) if it has.
+	CallerVoteDecision string `json:"callerVoteDecision,omitempty" metadata:"callerVoteDecision,optional"`
+}
+
 // Vote represents a single vote cast by an institution on a membership
 // proposal. Its key is a composite of (proposalId, votedBy), so a second
 // vote from the same institution on the same proposal collides with the
