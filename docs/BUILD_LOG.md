@@ -2857,3 +2857,80 @@ live URL (port 443 open to `Any`, no rate-limiting on the login system,
 per `ARCHITECTURE.md`'s own existing note) was flagged directly to the
 user as an accepted, deliberate tradeoff for a short-lived QA target —
 not something to leave running indefinitely unreviewed.
+
+## Phase 16 — Staging wipe and fresh redeploy (2026-08-11)
+
+**Why:** by this point staging had accumulated real, permanent-in-the-ledger
+QA test data with no way to remove any of it at the chaincode level — two
+fake institutions (`InstitutionQAMSP`, `QARing3CandMSP`) from `agentic-qa`'s
+own real-vote incident, a membership proposal (`GovVerifyMSP`, created while
+verifying `governance-vote-status`) that was mathematically stuck open
+forever once those two phantom institutions inflated the real quorum, and
+five QA-labeled certificates from Ring 3 lifecycle testing. Checked first
+that `institution-cc` has no deactivate/remove-institution or
+cancel-proposal function — confirmed it doesn't (only 4 mutating functions
+exist total: `InitLedger`, `RegisterInstitution`, `ProposeNewMember`,
+`CastVote`). Checked `certificate-cc` for anything of real value before
+wiping (`GetCertificatesByInstitution` for all 3 real institutions) — all 5
+certificates found were clearly QA test artifacts, nothing genuine lost.
+
+**Sequence, same process as the original Phase 15 standup:**
+
+```bash
+# Paused agentic-qa's nightly schedule first - staging is inconsistent
+# during a wipe/redeploy window.
+./scripts/network.sh down --wipe
+./scripts/network.sh up
+```
+
+Confirmed a clean genesis state before touching chaincode: all 6 peers
+joined `blcchannel` with identical block hash, height 1.
+
+**A real gotcha, not the same one as Phase 15's version-bump trap.**
+`chaincode.sh`'s `CC_VERSION`/`CC_SEQUENCE` were `1.2`/`2` in git — correct
+for *local's* history (from the `governance-vote-status` chaincode
+redeploy), wrong for staging's fresh channel, which needs sequence 1.
+Fixed on staging's own checkout only (`sed -i` on `chaincode.sh`, never
+pushed) — the same "verify the real committed state per network, don't
+trust the tracked file blindly" discipline already documented for this
+exact file. Redeployed both chaincodes at `1.0`/sequence `1`,
+`institution-cc` *with* `--init-function InitLedger` this time (a genuinely
+fresh channel needs it — unlike the earlier upgrade-in-place redeploy,
+which deliberately omitted it to avoid retriggering `InitLedger`'s own
+already-initialized guard).
+
+**A second, more significant real bug found and fixed during the
+governance bootstrap:** hand-constructed `peer chaincode invoke` calls for
+`RegisterInstitution`/`ProposeNewMember`/`CastVote` (these three are
+bootstrap-only, never exposed via the backend's Fabric Gateway SDK, which
+handles multi-org endorsement automatically) were built with only ONE
+org's `--peerAddresses`/`--tlsRootCertFiles` pair. The channel's actual
+`Application` endorsement policy is `ImplicitMeta: "MAJORITY Endorsement"`
+(confirmed directly in `generated/configtx.yaml`) — a majority of the 3
+orgs, i.e. 2, each satisfying their own `OR('OrgMSP.peer')` policy. A
+single-org-endorsed transaction passes simulation cleanly (the CLI prints
+"Chaincode invoke successful" with a real, correct-looking payload) but
+silently fails validation at commit time and is never actually written to
+the ledger — confirmed by immediately re-querying `GetAllInstitutions`
+after a "successful" `RegisterInstitution` call and finding it empty,
+twice, reproducibly, with clean (non-garbled) single-command verification.
+Fixed by adding a second org's `--peerAddresses`/`--tlsRootCertFiles` pair
+to every mutating bootstrap call. Every write was independently re-verified
+with a follow-up read before proceeding to the next step, not assumed from
+the CLI's own "successful" message — exactly the discipline that caught
+this in the first place.
+
+**Result:** `RegisterInstitution` for BLCFounder and InstitutionA, then a
+real `ProposeNewMember`/`CastVote` flow bringing InstitutionB in with a
+real 2/2 majority — confirmed via `GetAllInstitutions` showing exactly the
+3 real institutions, all active, nothing else. Backend (×3) and frontend
+restarted (code already current, no rebuild needed — only the network
+underneath changed). Re-verified live: `/institutions` shows exactly 3 rows;
+`governance-vote-status`'s propose/vote/Recently-closed flow works
+correctly against the fresh, non-inflated quorum (`totalEligibleVoters: 3`,
+not 5); `QA_GUEST`'s read-only guard still rejects a write attempt (its
+config lives in `.env` files, untouched by the network wipe). A test
+proposal created during verification was voted to a clean `Rejected`
+resolution rather than left stuck open, unlike the pre-wipe incident.
+`agentic-qa`'s nightly schedule re-enabled once all of the above was
+confirmed.

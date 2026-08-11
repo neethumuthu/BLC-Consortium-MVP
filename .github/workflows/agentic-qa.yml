@@ -20,17 +20,16 @@
 # run collide) or ship a known-broken placeholder target.
 name: agentic-qa
 on:
-  # Nightly schedule disabled again 2026-08-11: staging is being wiped
-  # and redeployed from scratch (the QA-created test data - two fake
+  # Nightly schedule re-enabled 2026-08-11, after staging was wiped and
+  # redeployed fresh (see docs/BUILD_LOG.md's Phase 16 and
+  # docs/ERROR_LOG.md) to clear out accumulated QA test data - two fake
   # institutions, a permanently-stuck test proposal, five QA-labeled
-  # test certificates - was cluttering the real environment with no way
-  # to clean any of it up at the chaincode level). Off for the duration
-  # of the wipe/redeploy/re-bootstrap so a 3am run doesn't fire against
-  # a half-rebuilt or freshly-reset network. Re-enable once the fresh
-  # environment is confirmed working end to end, same discipline as the
-  # read-only-credential fix earlier the same day. See docs/ERROR_LOG.md.
-  # schedule:
-  #   - cron: '0 3 * * *'
+  # certificates - none of which the chaincode had any way to remove.
+  # Fresh environment verified working end to end (3 real institutions,
+  # QA_GUEST's read-only guard, the governance-vote-status feature) before
+  # turning this back on.
+  schedule:
+    - cron: '0 3 * * *'        # nightly exploratory regression on staging
   workflow_dispatch: {}         # for manual live-testing, per the same
                                  # pattern as the other Claude-driven
                                  # workflows in this repo

@@ -22,6 +22,91 @@ Entry format:
 
 ---
 
+## 2026-08-11 — Single-org-endorsed `peer chaincode invoke` reports success but never commits
+
+**Phase:** 16 — staging wipe and fresh redeploy
+**Symptom:** during the fresh governance bootstrap, `RegisterInstitution`
+(hand-invoked via raw `peer chaincode invoke`, since it's bootstrap-only
+and never goes through the backend's Fabric Gateway SDK) reported
+`Chaincode invoke successful` with a real, correct-looking payload
+(`{"institutionId":"BLCFounderMSP",...,"status":"active",...}`). A
+follow-up `GetAllInstitutions` call moments later returned `[]` — empty.
+Reproduced this exact sequence twice, cleanly, with single commands (not
+a garbled multi-command paste), ruling out a terminal/display artifact.
+**Command / context:**
+```
+peer chaincode invoke ... --peerAddresses localhost:7051 \
+  --tlsRootCertFiles .../BLCFounder/peers/peer0/tls/ca.pem \
+  -c '{"function":"RegisterInstitution","Args":["BLC Founder"]}'
+# -> "Chaincode invoke successful... status:active..."
+peer chaincode invoke ... -c '{"function":"GetAllInstitutions","Args":[]}'
+# -> "[]"
+```
+**Root cause:** the invoke only gathered endorsement from ONE org's peer
+(`--peerAddresses` given once). `generated/configtx.yaml`'s `Application`
+group sets `Endorsement: {Type: ImplicitMeta, Rule: "MAJORITY Endorsement"}`
+— a majority of the channel's 3 orgs (i.e. 2) must each satisfy their own
+per-org policy (`OR('OrgMSP.peer')`). A single-org-endorsed proposal passes
+*simulation* cleanly (hence the correct-looking "successful" payload — that
+payload is the simulated result, not confirmation of a committed block) but
+fails *validation* at commit time and is silently dropped — the transaction
+never lands in a valid block, so the world state never changes. The backend
+never hits this because its Fabric Gateway SDK (`submitTransaction`)
+handles endorsement-policy-based peer selection automatically; this only
+bites hand-constructed CLI invokes, which is exactly what the bootstrap-only
+functions (`RegisterInstitution`, and by extension `ProposeNewMember`/
+`CastVote` when invoked this way) require.
+**Resolution:** pass a second org's `--peerAddresses`/`--tlsRootCertFiles`
+pair on every mutating bootstrap invoke (e.g. BLCFounder's own peer plus
+InstitutionA's, regardless of which org is the *caller* — any peer with
+the chaincode installed can endorse the same deterministic simulation).
+Verified the fix by re-running `GetAllInstitutions` after each write from
+then on, not trusting the CLI's own "successful" message again without an
+independent read-back.
+**Follow-up:** worth remembering for any *future* raw `peer chaincode
+invoke` bootstrap step on this project (e.g. onboarding a real 4th org) —
+always endorse with at least 2 of the channel's orgs, and always verify
+with a fresh read, never trust "successful" alone for a hand-built CLI
+invoke against this channel's policy.
+
+---
+
+## 2026-08-11 — Staging wiped and redeployed fresh to clear stuck QA test data
+
+**Phase:** 16 — staging wipe and fresh redeploy
+**Symptom:** staging had accumulated real, permanent ledger state from QA
+exploration with no way to remove any of it: two fake institutions
+(`InstitutionQAMSP`, `QARing3CandMSP`) from the earlier real-vote incident,
+a membership proposal (`GovVerifyMSP`) that was mathematically stuck open
+forever once those two phantom institutions inflated the real quorum
+(`5/2+1=3` required, only 3 institutions ever capable of voting for real),
+and five QA-labeled test certificates.
+**Command / context:** confirmed no cleanup path existed before wiping —
+`institution-cc` has no deactivate/remove-institution or cancel-proposal
+function (only 4 mutating functions total), and worked through the actual
+vote math showing the stuck proposal could never resolve either way given
+the phantom institutions. Checked `certificate-cc` for anything of real
+value first (`GetCertificatesByInstitution` for all 3 real institutions) —
+all 5 results were clearly QA test artifacts, confirmed nothing genuine
+would be lost.
+**Root cause:** no chaincode-level way to deactivate an institution or
+cancel a proposal once created — a structural gap, not a bug in any single
+feature. Governance-authorization gaps discovered and fixed reactively
+(the read-only-credential fix) don't retroactively clean up what already
+happened while the gap was open.
+**Resolution:** full `./scripts/network.sh down --wipe && up`, fresh
+chaincode deploy at `1.0`/sequence `1` (see the endorsement-policy entry
+above for a bug hit along the way), and a real governance bootstrap
+reproducing the original Phase 15 onboarding flow exactly. Backend/frontend
+restarted (code unchanged, no rebuild needed). Full detail in
+`docs/BUILD_LOG.md`'s Phase 16 entry.
+**Follow-up:** the underlying gap (no deactivate/cancel functions) is still
+there — a future incident of the same shape would need the same wipe, or a
+real chaincode upgrade adding those functions. Not done here; flagged as a
+real, open question, not silently deferred.
+
+---
+
 ## 2026-08-11 — `agentic-qa` completed real governance votes on staging, twice
 
 **Phase:** 15 — Azure staging deployment (post-launch hardening)
