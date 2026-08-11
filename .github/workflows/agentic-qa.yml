@@ -20,17 +20,22 @@
 # run collide) or ship a known-broken placeholder target.
 name: agentic-qa
 on:
-  # Nightly schedule disabled 2026-08-11: two runs (2026-08-10, 2026-08-11)
-  # each completed a real ProposeNewMember + enough real CastVotes to reach
-  # quorum, logged in as the real BLCFounder account (its cosmetic-login
-  # credentials are readable straight out of frontend/src/lib/institutions.ts).
-  # That created two permanent, fully "active" institutions on the staging
-  # ledger and changed the consortium's real majority-vote threshold. Off
-  # until the agent is switched to a read-only account that can't complete
-  # a real vote/proposal/certificate action - see docs/ERROR_LOG.md.
-  # schedule:
-  #   - cron: '0 3 * * *'
-  workflow_dispatch: {}         # manual live-testing only, for now
+  # Nightly schedule re-enabled 2026-08-11, after being off since earlier
+  # the same day: two prior runs (2026-08-10, 2026-08-11) each completed a
+  # real ProposeNewMember + enough real CastVotes to reach quorum, logged
+  # in as the real BLCFounder account. Fixed by switching this agent to a
+  # read-only QA_GUEST login (see frontend/src/lib/institutions.ts,
+  # backend's ApiKeyGuard) - verified live before re-enabling, two ways:
+  # a direct curl against the backend with the read-only key (403,
+  # "This is a read-only credential - it cannot perform write actions"),
+  # and a full browser walkthrough of the real propose flow with a real
+  # session (same 403 message rendered inline, session left intact, no
+  # proposal created). See docs/ERROR_LOG.md.
+  schedule:
+    - cron: '0 3 * * *'        # nightly exploratory regression on staging
+  workflow_dispatch: {}         # for manual live-testing, per the same
+                                 # pattern as the other Claude-driven
+                                 # workflows in this repo
 
 jobs:
   qa:
