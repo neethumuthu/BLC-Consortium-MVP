@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-11
+last_verified: 2026-08-12
 source: retroactive
 confidence: medium
 owner: tech lead
@@ -57,3 +57,16 @@ owner: tech lead
     deterministically.
 11. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
     packaging.
+12. Any hand-constructed `peer chaincode invoke` (used only for bootstrap-only
+    governance functions — `RegisterInstitution`/`ProposeNewMember`/`CastVote`
+    invoked outside the backend's Fabric Gateway SDK, which handles this
+    automatically) must pass `--peerAddresses`/`--tlsRootCertFiles` for at
+    least 2 of the channel's orgs, matching `configtx.yaml`'s `MAJORITY
+    Endorsement` policy. A single-org-endorsed invoke passes simulation and
+    prints a real, correct-looking "successful" payload, but silently fails
+    validation at commit — the write never lands. Always verify with an
+    independent read-back after a hand-built invoke; never trust the CLI's
+    own success message alone. (Real incident, BLC-31 Phase 16: a fresh
+    governance bootstrap's `RegisterInstitution` calls reported success
+    while `GetAllInstitutions` kept returning `[]` — see `docs/ERROR_LOG.md`,
+    2026-08-11.)

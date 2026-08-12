@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-11
+last_verified: 2026-08-12
 source: code-derived
 confidence: medium
 owner: QA engineer
@@ -63,7 +63,7 @@ Only rules with actual evidence in the repo are listed. Everything else is expli
 
 > *(source: doc-derived V1_PHASE_OVERVIEW.md, confidence: medium)*
 
-- **`chaincode/certificate-cc`'s unit test count is confirmed at exactly 22 test functions**: `issuecertificate_test.go` (7) + `getcertificate_test.go` (2) + `getcertificatesbyinstitution_test.go` (2) + `verifycertificate_test.go` (6) + `revokecertificate_test.go` (5) = 22, counted directly (`grep -c "^func Test"` per file). This matches the source doc's "22/22 unit tests" claim for the certificate lifecycle exactly. Both chaincodes together expose 12 exported transaction functions (7 in `institution-cc`, 5 in `certificate-cc`), also confirmed by direct count.
+- **`chaincode/certificate-cc`'s unit test count is confirmed at exactly 22 test functions**: `issuecertificate_test.go` (7) + `getcertificate_test.go` (2) + `getcertificatesbyinstitution_test.go` (2) + `verifycertificate_test.go` (6) + `revokecertificate_test.go` (5) = 22, counted directly (`grep -c "^func Test"` per file). This matches the source doc's "22/22 unit tests" claim for the certificate lifecycle exactly. Both chaincodes together expose 13 exported transaction functions (8 in `institution-cc` — `GetResolvedProposals` added 2026-08-11 — 5 in `certificate-cc`), also confirmed by direct count.
 
 ## Ring 3 QA goals
 
@@ -88,9 +88,10 @@ Goals are intents, not scripts — the agent should plan its own concrete paths 
 - Attempt a second proposal for a candidate that already has an open proposal — confirm rejection — per "Duplicate proposal for the same candidate is rejected."
 - Cast a vote on an open proposal as an eligible institution, confirm the tally updates — per "Vote is accepted and counted."
 - Attempt to vote on your own proposal as the applicant — confirm rejection — per "Applicant cannot vote on its own proposal."
-- Vote twice on the same proposal as the same institution — confirm the second attempt is rejected and the UI still shows your original vote — per "Double-voting is rejected."
+- Vote twice on the same proposal as the same institution — confirm the second attempt is rejected and the row already shows "You voted Yes/No" with no voting control, rather than a generic error — per "Double-voting is rejected."
 - Attempt to vote on a proposal that's already Approved or Rejected — confirm the UI shows the proposal's final status rather than offering a voting control — per "Voting on a closed proposal is rejected."
 - Load the governance page as an institution that hasn't voted on anything yet — confirm every open proposal is listed with applicant name, tally, and this institution's not-yet-voted state — per "Pending proposals are listed."
+- Load the governance page and confirm the "Recently closed" section lists every already-resolved proposal (applicant name, final status, final tally, no voting control) — including one this institution never got to vote on before it resolved — per "View resolved proposals."
 
 ### Credential rotation (openspec/specs/credential-rotation/spec.md)
 - Change an institution's credential with the correct current value, then confirm the old credential is rejected and the new one works on the very next request — per "Successful credential change."
