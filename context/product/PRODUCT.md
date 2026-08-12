@@ -1,6 +1,6 @@
 ---
 last_verified: 2026-08-12
-source: code-derived + existing docs (ARCHITECTURE.md, archived V1_PHASE_OVERVIEW.md), no workshop yet
+source: code-derived + existing docs (ARCHITECTURE.md, archived V1_PHASE_OVERVIEW.md) + informal planning notes shared 2026-08-12 (Current focus section only) — no workshop yet
 confidence: low
 owner: unassigned — needs a PM/PO pass; this is a placeholder, not their sign-off
 ---
@@ -14,6 +14,19 @@ team workshops that would normally produce this haven't happened). Everything
 below is inferred from `ARCHITECTURE.md`, the archived `V1_PHASE_OVERVIEW.md`,
 and the actual chaincode/backend/frontend behavior — treat it as a draft to
 correct in Stage E, not a settled product definition.
+
+**Process note on the "Current focus" section specifically**, per a Ring 2
+review finding on the PR that added it: `AGENTS.md` rule 5 / `context/rules/general.md`
+rule 7 describe context updates as going through `context-gardener`
+(a bot that reacts to merged code diffs), which this genuinely doesn't fit
+— it's product-roadmap input, not something derivable from a code change.
+There's no formal "context steward" role yet either (that's a Stage E
+output this project hasn't reached). Handled instead by hand-authoring the
+update and routing it through the same PR + Ring 2 review gate as any other
+`context/` change, as the closest available substitute check today. The
+source notes themselves have no external ticket/doc/Slack link to cite —
+they were shared directly in conversation, not drawn from a written
+artifact with its own URL.
 
 ## What it is
 
