@@ -52,19 +52,32 @@ jobs:
             4. Every scenario in the change has a matching test.
             5. tasks.md items claimed complete are actually implemented.
             6. Security smells (secrets, injection, authz gaps).
-            Post findings as concise PR review comments; severity-tag each
-            [blocker|should-fix|nit]. Do not comment on style a linter covers.' || '' }}
-          # Bash(gh pr comment:*)/Bash(gh pr review:*) added after a real run
-          # did 11 turns of analysis then posted nothing. Turned out NOT to
-          # be the actual fix, confirmed via show_full_output: the action
-          # posts reviews through its own built-in GitHub App mechanism (see
-          # its "Post buffered inline comments" step, own token, revoked
-          # after use) - entirely separate from Bash/allowedTools. A later
-          # run posted a real, correct review with these same allowedTools,
-          # so the first run's silence likely came from getting sidetracked
-          # by denied exploratory commands (gh auth status, git remote) and
-          # never finishing in time - not a missing-permission issue.
-          # Left the gh pr comment/review entries in anyway - harmless, and
-          # gives Claude an alternate path if it ever does try posting via
-          # gh directly.
+            Severity-tag each finding [blocker|should-fix|nit]. Do not comment
+            on style a linter covers.
+            Your final response text is NOT posted anywhere on its own — writing
+            the review is not the same as publishing it. As your LAST action,
+            you MUST run `gh pr comment --body "<your findings, formatted as
+            markdown>"` (no PR number needed - it targets the current
+            checked-out branch automatically). If you have zero findings, still
+            post a short comment saying so. Skipping this step means the review
+            had no effect, even if your analysis was correct.' || '' }}
+          # 2026-08-11/12 (BLC-31): reproduced this exact silent-no-op twice
+          # with show_full_output:true. Root cause, confirmed from the full
+          # transcript, not guessed: the agent DID produce a complete, correct
+          # review both times (visible in its own final "result" text) but
+          # never once called gh pr comment/gh pr review, despite both being
+          # allowed - it treated writing the analysis as the finished task
+          # rather than an intermediate step before publishing it. The
+          # action's own built-in "Post buffered inline comments" step (see
+          # below) also reported "No buffered inline comments" both times -
+          # that mechanism needs the agent to use it explicitly too, it does
+          # not auto-extract a review from ordinary response text. Separately,
+          # 3 of the agent's tool calls were denied both times (gh pr list,
+          # gh pr view, find, env) - it kept trying to self-discover the PR
+          # number via disallowed commands; the prompt above now states
+          # explicitly that a bare `gh pr comment` targets the current branch,
+          # removing the reason it was trying those in the first place. Fixed
+          # by making "execute gh pr comment" an explicit mandatory final step
+          # rather than trusting "post findings as PR review comments" to be
+          # read as an instruction to run a tool, not just describe an outcome.
           claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr review:*),Read,Grep,Glob"'
