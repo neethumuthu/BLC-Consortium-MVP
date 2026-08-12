@@ -88,9 +88,35 @@ for the two items that list already got wrong by the time of writing):
 
 ## Current focus
 
-**Unverified — no roadmap or backlog document exists yet.** There is no
-`context/product/` history to draw a "current quarter theme" from, and no
-GitHub Project item currently reflects a stated near-term product
-priority beyond individual issues. This is the same gap already flagged
-against `capture-learning` and the Stage F spec-reconstruction step — Stage E
-should produce a real answer here, not an inferred one.
+**Real roadmap direction, from informal planning/scoping notes shared
+2026-08-12 — not a formal Stage E workshop, but the first actual roadmap
+input this file has had.** Confidence on this section specifically is
+higher than the rest of this file, though still not a PM/PO sign-off.
+
+- **v1.0 (current):** consortium creation via institution onboarding and
+  approval, staged rather than all at once — the first institution
+  establishes the consortium, then a second and third institution join
+  afterward. Matches what's already built (`institution-governance-ui`,
+  `institution-directory`).
+- **v1.01 (next): certificate licensing/partnership.** An institution
+  licenses its certificate brand to partner institutions, who can then
+  issue certificates under their own name with an "official partner of
+  \<institution\>" designation. This is the one item this file's own "What
+  we are NOT building" section above already flagged as still genuinely
+  unbuilt — now confirmed as the actual next-quarter target, not just a
+  distant non-goal. Being scoped as a real capability at
+  `openspec/changes/certificate-licensing/`.
+
+**Two real open questions in the notes, genuinely unresolved — not
+guessed here, carried forward as actual Open Questions in the
+`certificate-licensing` change instead:**
+1. Does a partnering institution need vetting before it can license a
+   certificate brand, or only once the network scales past the first few
+   institutions?
+2. Should the 66%-of-institutions-agree governance threshold be decided
+   now, or is it safe to defer until the network has more than two or
+   three institutions — and if deferred, what does adding it later
+   actually cost?
+
+Do not treat either question as answered anywhere else in this file or in
+`DOMAIN.md` until they're resolved.
