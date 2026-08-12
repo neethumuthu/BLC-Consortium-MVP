@@ -2958,16 +2958,19 @@ single-org-endorsement silent-commit bug from Phase 16 — and graduated it
 into `context/rules/general.md` as rule 9, per the skill's own step 4
 (unambiguous, permanent, not a one-off).
 
-**Stage F's `/opsx:onboard` is a real tooling gap, not something to fake.**
-Confirmed absent from both the starter-kit's shipped commands and this
-project's installed `.claude/commands/opsx/` (which has only apply/archive/
-explore/propose/sync/update). Stubbed `openspec/specs/certificate-lifecycle/
-spec.md` by hand instead — a real, shipped, previously-unspec'd capability —
-using proper Requirements/Scenarios (a plain-prose "one-paragraph stub" as
-the tutorial literally describes doesn't pass `openspec validate --strict`,
-which requires at least one Scenario per Requirement). Marked
-`confidence: low` and flagged for the human review the tutorial calls for
-before this graduates to a real reconstructed spec.
+**Stage F's `/opsx:onboard` was believed missing at the time — later found
+to be wrong the same day (see the correction below).** At this point in the
+day, `openspec config profile workflows`/`expanded` had failed with
+"Available presets: core," and that was read as confirmation the command
+didn't exist. Stubbed `openspec/specs/certificate-lifecycle/spec.md` by hand
+instead — a real, shipped, previously-unspec'd capability — using proper
+Requirements/Scenarios (a plain-prose "one-paragraph stub" as the tutorial
+literally describes doesn't pass `openspec validate --strict`, which
+requires at least one Scenario per Requirement). Marked `confidence: low`
+and flagged for the human review the tutorial calls for before this
+graduates to a real reconstructed spec. The stub itself remains valid work
+regardless of the correction below — it's still a real, previously-unspec'd
+capability that needed coverage.
 
 **`context/product/PRODUCT.md` and `DOMAIN.md` drafted for the first time**
 — both directories didn't exist before today. Both explicitly marked as
@@ -3020,3 +3023,66 @@ this repo has ever carried a `Change-ID: <id>` in its body, which is what
 `project-sync.sh` looks for to know what to sync. Whoever files the next
 real issue against an OpenSpec change should include that, or the board
 will stay empty regardless of how correctly it's configured.
+
+**Correction, later the same day: `/opsx:onboard` was never actually
+missing — the earlier test used the wrong mechanism.** While researching
+whether to file an upstream issue for the "confirmed gap" above, found that
+`Fission-AI/OpenSpec` issue #1001 ("Can't find onboard command after init")
+was closed 9 days earlier by a maintainer with a working reproduction: the
+expanded workflow set isn't a named preset (`openspec config profile
+workflows`/`expanded`, what was tried earlier — correctly rejected, that
+preset name never existed) — it's a `custom` profile with an explicit
+`workflows` array, set via:
+
+```bash
+openspec config set profile custom
+openspec config set workflows '["new","continue","onboard","propose","explore","apply","update","sync","archive"]'
+openspec update
+```
+
+Reproduced this directly: `.claude/commands/opsx/onboard.md` and
+`.claude/skills/openspec-onboard/SKILL.md` now exist in this project. No
+upstream issue was filed — there was nothing to report; filing one would
+have been false and gotten closed the same way #1001 was. **But reading the
+real `openspec-onboard` skill in full shows it's a single-task guided
+tutorial (~15-20 min, scans for TODO/FIXME/missing-tests-style quick wins
+on one task) — not a bulk scanner that cross-references every route against
+every spec.** That's a materially different tool than what the earlier
+"missing tooling" framing assumed it would be. Built
+`.claude/skills/spec-onboard-replacement/SKILL.md` instead — a genuinely
+complementary tool (bulk sweep, classifies each gap as a brand-new
+capability needing a direct stub vs. a missing requirement in an
+already-formalized spec needing a real `propose → apply → archive` change),
+not a substitute for something that turned out not to be missing.
+Corrected every earlier claim of "confirmed absent" in this log, the two
+spec stubs' own text, and the adoption-plan tracking doc rather than
+leaving the incorrect version standing.
+
+Also used this as a second real test case for the same-capability-vs-new-gap
+distinction the replacement skill now encodes: found `GET
+/institutions/proposals/:proposalId` had zero spec coverage despite
+`institution-governance-ui` already being a formalized, archived capability
+— correctly routed through a real `propose → apply → archive` cycle
+(`governance-proposal-lookup`, archived same day) instead of a raw stub,
+including a live verification against staging (SSH, direct backend `curl`).
+**First pass used BLCFounder's real API key for this — a real mistake,
+caught by the Ring 2 review on the PR carrying this change (PR #13,
+`[blocker]`): a purpose-built read-only credential (`READ_ONLY_API_KEY`)
+already exists for exactly this kind of read-only verification, built
+specifically because an earlier incident used a real institution's
+most-privileged credential for exploratory work and cast two real
+governance votes as a side effect (`docs/ERROR_LOG.md`, 2026-08-11). No
+write happened here either way — `GetProposal` is GET-only — but the
+credential choice itself was the violation of `AGENTS.md` rule 4 /
+`context/rules/general.md` rule 3, not the outcome. Redone with
+`READ_ONLY_API_KEY`: identical results (full record with
+`callerVoteDecision: "yes"` for the existing proposal; 404 for the
+nonexistent one) — confirmed both the fix and that the original scenario
+coverage was accurate regardless of which credential fetched it.**
+Also fixed a real, unrelated
+side-issue found during that verification: the staging VM's NSG-restricted
+SSH rule (`allow-ssh-my-ip`) still pointed at a stale IP from a previous
+session — updated via `az network nsg rule update`, confirmed landed from
+the update command's own returned state (`"ProvisioningState": "Succeeded"`,
+new IP echoed back in the same response), not just assumed from a
+non-error exit.

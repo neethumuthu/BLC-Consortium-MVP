@@ -57,3 +57,14 @@ An institution SHALL be able to discover a membership proposal's existence and f
 #### Scenario: A resolved proposal shows its outcome, not a voting control
 - **WHEN** an active institution views a resolved proposal it did not get to vote on
 - **THEN** the UI shows the proposal's final status and tally, and does not offer a voting control for it
+
+### Requirement: Look up a single proposal by ID
+Any authenticated caller SHALL be able to fetch a single membership proposal directly by its ID, via `GET /institutions/proposals/:proposalId`, without needing to already know it from the pending or resolved lists.
+
+#### Scenario: Proposal exists
+- **WHEN** a caller requests an existing proposal's ID
+- **THEN** the full proposal record is returned, including the caller's own recorded vote decision on it ("voted yes" / "voted no") if the caller has already voted, matching the same `callerVoteDecision` behavior already present when listing pending or resolved proposals
+
+#### Scenario: Proposal does not exist
+- **WHEN** a caller requests a proposal ID with no matching record
+- **THEN** the request is rejected rather than returning an empty or null result

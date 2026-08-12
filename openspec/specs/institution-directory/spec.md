@@ -16,11 +16,15 @@ API-reachable behavior that predates this project's adoption of OpenSpec —
 `institution-governance-ui`'s spec covers proposing/voting on membership,
 not the plain directory lookup this spec covers.
 
-**This is a code-derived stub, not a reconstructed spec** — same caveat and
-same reason as `certificate-lifecycle`'s: no real next-quarter capability
-backlog exists yet to select from, and the tutorial's own `/opsx:onboard`
-tool for this step isn't part of the installed skill set. Confirm this
-holds up before raising `confidence` above `low`.
+**This is a code-derived stub, not a reconstructed spec** — same reason as
+`certificate-lifecycle`'s: no real next-quarter capability backlog exists
+yet to select from. (This was originally attributed to `/opsx:onboard`
+being missing from the CLI — that was wrong; see
+`.claude/skills/spec-onboard-replacement/SKILL.md`'s correction note.
+`/opsx:onboard` exists once a custom workflow profile is enabled, but it's a
+single-task guided tutorial, not a bulk capability sweep — a different tool
+than what generated this stub.) Confirm this holds up before raising
+`confidence` above `low`.
 
 ## Requirements
 

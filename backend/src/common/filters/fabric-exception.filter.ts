@@ -8,13 +8,15 @@ import { CommitError, EndorseError, GatewayError, SubmitError } from '@hyperledg
 // simulation/endorsement — exception.details[0].message carries the
 // real Go fmt.Errorf string from the peer.
 //
-// The string-matching table below is a FIRST DRAFT, not verified against
-// live output yet (see docs/BUILD_LOG.md's Phase 11 entry / this
+// The string-matching table below started as a FIRST DRAFT, not verified
+// against live output (see docs/BUILD_LOG.md's Phase 11 entry / this
 // implementation's own verification plan) — chaincode errors have no
 // structured error-code convention on the Go side, only fmt.Errorf
-// strings, so this is unavoidably heuristic. Log the raw exception shape
-// during verification and correct this table against real observed data
-// before treating it as final.
+// strings, so this is unavoidably heuristic. The `/does not exist/` -> 404
+// branch below is now confirmed against real output (docs/BUILD_LOG.md,
+// 2026-08-12, GetProposal live-verified on staging); the rest of the table
+// is still unverified — log the raw exception shape and correct each
+// remaining branch against real observed data before treating it as final.
 // SubmitError can't be named here directly - @hyperledger/fabric-gateway's
 // public entry point re-exports it as a type-only export even though
 // it's a real class internally. Both SubmitError and EndorseError extend
