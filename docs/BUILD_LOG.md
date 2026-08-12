@@ -3064,9 +3064,25 @@ distinction the replacement skill now encodes: found `GET
 `institution-governance-ui` already being a formalized, archived capability
 — correctly routed through a real `propose → apply → archive` cycle
 (`governance-proposal-lookup`, archived same day) instead of a raw stub,
-including a live verification against staging (SSH, direct backend `curl`
-with BLCFounder's real API key) confirming both the existing-proposal and
-not-found scenarios exactly as spec'd. Also fixed a real, unrelated
+including a live verification against staging (SSH, direct backend `curl`).
+**First pass used BLCFounder's real API key for this — a real mistake,
+caught by the Ring 2 review on the PR carrying this change (PR #13,
+`[blocker]`): a purpose-built read-only credential (`READ_ONLY_API_KEY`)
+already exists for exactly this kind of read-only verification, built
+specifically because an earlier incident used a real institution's
+most-privileged credential for exploratory work and cast two real
+governance votes as a side effect (`docs/ERROR_LOG.md`, 2026-08-11). No
+write happened here either way — `GetProposal` is GET-only — but the
+credential choice itself was the violation of `AGENTS.md` rule 4 /
+`context/rules/general.md` rule 3, not the outcome. Redone with
+`READ_ONLY_API_KEY`: identical results (full record with
+`callerVoteDecision: "yes"` for the existing proposal; 404 for the
+nonexistent one) — confirmed both the fix and that the original scenario
+coverage was accurate regardless of which credential fetched it.**
+Also fixed a real, unrelated
 side-issue found during that verification: the staging VM's NSG-restricted
 SSH rule (`allow-ssh-my-ip`) still pointed at a stale IP from a previous
-session — updated to the current one via `az network nsg rule update`.
+session — updated via `az network nsg rule update`, confirmed landed from
+the update command's own returned state (`"ProvisioningState": "Succeeded"`,
+new IP echoed back in the same response), not just assumed from a
+non-error exit.

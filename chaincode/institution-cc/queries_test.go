@@ -231,6 +231,28 @@ func TestGetProposal_CallerVoteDecisionAbsentWhenCallerHasNotVoted(t *testing.T)
 	}
 }
 
+func TestGetProposal_CallerVoteDecisionPresentWhenCallerHasVoted(t *testing.T) {
+	ledger := setupActiveFounders(t)
+	contract := &SmartContract{}
+
+	proposeCtx, proposeStub := newTx(ledger, "tx1", "BLCFounderMSP", time.Now())
+	created, err := contract.ProposeNewMember(proposeCtx, "InstitutionBMSP", "Institution B")
+	mustCommit(t, proposeStub, err)
+
+	voteCtx, voteStub := newTx(ledger, "tx2", "BLCFounderMSP", time.Now())
+	_, err = contract.CastVote(voteCtx, created.ProposalID, voteDecisionYes)
+	mustCommit(t, voteStub, err)
+
+	getCtx, _ := newTx(ledger, "tx3", "BLCFounderMSP", time.Now())
+	fetched, err := contract.GetProposal(getCtx, created.ProposalID)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if fetched.CallerVoteDecision != voteDecisionYes {
+		t.Fatalf("expected callerVoteDecision=%q for the voting caller, got %q", voteDecisionYes, fetched.CallerVoteDecision)
+	}
+}
+
 func TestGetResolvedProposals_ReturnsApprovedAndRejectedNotOpen(t *testing.T) {
 	ledger := setupActiveFounders(t)
 
