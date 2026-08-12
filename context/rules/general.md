@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-11
+last_verified: 2026-08-12
 source: retroactive
 confidence: medium
 owner: tech lead
@@ -47,13 +47,23 @@ owner: tech lead
 8. Verify Azure/infra `create` commands with a follow-up `show`/`list` call —
    ambiguous or truncated CLI output is never treated as success or failure on
    its own.
-9. Anything meant to run unattended on a staging/production host runs as a
-   `systemd` service, not a bare/background process.
+9. Any `peer chaincode invoke` against a multi-org majority-endorsement
+   channel must include `--peerAddresses`/`--tlsRootCertFiles` for enough
+   orgs to satisfy the endorsement policy (a majority of orgs, each
+   `OR('OrgMSP.peer')`) — a single-org-endorsed invoke reports
+   `Chaincode invoke successful` with a real payload but silently fails at
+   commit and is never written to the ledger. Always verify a mutating
+   invoke with an independent read-back (e.g. `GetAllInstitutions`); never
+   trust the CLI's own success message alone. (Real incident: BLC-31 Phase
+   16, 2026-08-11 — see `docs/ERROR_LOG.md` and
+   `context/learnings/LEARNINGS.md`.)
+10. Anything meant to run unattended on a staging/production host runs as a
+    `systemd` service, not a bare/background process.
 
 ## Code
 
-10. Chaincode must never call `time.Now()` — use the transaction's own timestamp
+11. Chaincode must never call `time.Now()` — use the transaction's own timestamp
     (`ctx.GetStub().GetTxTimestamp()`), since every endorsing peer must agree
     deterministically.
-11. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
+12. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
     packaging.
