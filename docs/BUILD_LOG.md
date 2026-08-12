@@ -2988,7 +2988,35 @@ exercise the Ring 2 gate (`ai-pr-review.yml`) for real. It completed
 after the fix landed on `main`.
 
 **Still open, not attempted:** Stage E's live team workshops (explicitly
-out of scope for this pass); Stage G's project-board Stage-field sync,
-Friday operating reviews, and ongoing `capture-learning` cadence — none of
-these are demonstrable from a single solo session, they need real usage
-over time.
+out of scope for this pass); Stage G's Friday operating reviews and ongoing
+`capture-learning` cadence — not demonstrable from a single solo session,
+they need real usage over time.
+
+**Follow-up same day: a second unspec'd capability, and the ai-pr-review
+fix confirmed working for real.** Systematically checked every remaining
+HTTP-reachable chaincode function for spec coverage: `RegisterInstitution`
+has no HTTP route at all (confirmed directly, correctly excluded — bootstrap/
+infra, same basis as `org-add.sh`), but `GetAllInstitutions`/`GetInstitution`
+(the institution directory list/lookup, distinct from
+`institution-governance-ui`'s propose/vote coverage) were real, shipped, and
+uncovered. Stubbed `openspec/specs/institution-directory/spec.md` (PR #12) —
+this time properly through a dedicated PR rather than a direct push, per
+`context/rules/general.md` rule 7. `ai-pr-review.yml` posted a real,
+substantive, correctly-reasoned review this time (one legitimate `should-fix`:
+a missing pagination "known gap" note, matching the sibling
+`certificate-lifecycle` stub's own pattern) — confirming the earlier fix
+actually works, not just in theory.
+
+**A genuine Stage G gap found while checking on it, not fixed today:** the
+GitHub Project board ("BLC-31 AI SDLC Board", #2) has zero items on it
+(`gh project item-list 2 --owner neethumuthu` → `totalCount: 0`) despite
+being correctly field-configured and correctly wired into `project-sync.yml`.
+None of the real work this project has done — issue #8, PRs #4/#9/#10/#11/#12 —
+has ever actually landed on the board. PR #4's earlier throwaway test verified
+the *mechanism* works, then cleaned itself up per its own description,
+leaving nothing behind. Not backfilled retroactively (would be fabricating
+history for appearance, not a real fix) — the actual gap is that no issue in
+this repo has ever carried a `Change-ID: <id>` in its body, which is what
+`project-sync.sh` looks for to know what to sync. Whoever files the next
+real issue against an OpenSpec change should include that, or the board
+will stay empty regardless of how correctly it's configured.
