@@ -24,7 +24,11 @@
   `eslint: not found`, unrelated to this change's file. Unlike the Jest gap,
   fixing this properly means installing a new dependency and running it for
   the first time ever against ~80 existing files nobody has checked —
-  real, separate scope, not a contained unblock. Corrected
+  real, separate scope, not a contained unblock. ~~Corrected
   `context/codebase/TESTING.md`'s inaccurate "ESLint is configured for
-  backend" claim instead of leaving it standing. Setting up backend ESLint
-  for real is a separate, future task.
+  backend" claim instead of leaving it standing.~~ **Correction, added
+  after archiving (PR #16's Ring 2 review caught this):** that
+  `TESTING.md` edit was reverted from this change's PR (#15) before merge
+  — a context edit can't ride along with a feature commit, per
+  `general.md` rule 7 — and landed instead in a separate dedicated PR
+  (#16). Setting up backend ESLint for real is a separate, future task.

@@ -30,7 +30,7 @@ Read the context relevant to your task — do not guess:
 
 | Need | Read |
 |---|---|
-| What the product does, domain terms | `context/product/PRODUCT.md`, `DOMAIN.md` (created 2026-08-12, `confidence: low`, pending real PM/PO review) |
+| What the product does, domain terms | `context/product/PRODUCT.md`, `context/product/DOMAIN.md` (created 2026-08-12, `confidence: low`, pending real PM/PO review) |
 | Architecture, module boundaries | `context/codebase/ARCHITECTURE.md`, `STRUCTURE.md` |
 | How we write code here | `context/codebase/CONVENTIONS.md`, `context/rules/general.md` |
 | How to test | `context/codebase/TESTING.md` |

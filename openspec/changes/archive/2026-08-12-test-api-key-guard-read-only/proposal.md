@@ -32,8 +32,15 @@ no requirement changes. `skip_specs: true` set in `.openspec.yaml`.)
   couldn't actually run at all. Contained fix: activates the already-installed
   `ts-jest` dependency, scoped to making this one file runnable, not a
   broader tooling change).
-- `context/codebase/TESTING.md` (corrected an inaccurate claim found along
+- ~~`context/codebase/TESTING.md` (corrected an inaccurate claim found along
   the way — it stated backend ESLint was "configured"; `eslint` isn't
-  actually installed in `backend/` at all. Fixing that for real is a
-  separate, future task, not part of this change).
+  actually installed in `backend/` at all.)~~ — **correction, added after
+  archiving (PR #16's Ring 2 review caught this):** this claim was true when
+  written, but the actual `TESTING.md` edit was reverted from this change's
+  PR (#15) before merge — a context-file edit riding along with a feature
+  commit violates `general.md` rule 7, so it needed its own dedicated PR
+  instead (per the same review, on #15 itself). The correction genuinely
+  landed, just in PR #16, not here. This change's real, final impact was
+  only the test file and the `package.json`/`.gitignore` additions below —
+  not `TESTING.md`.
 - No other production code changes.
