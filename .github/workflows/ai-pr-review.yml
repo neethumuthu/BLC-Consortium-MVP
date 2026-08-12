@@ -38,6 +38,7 @@ jobs:
           # no reason to widen this further than the one bot this repo
           # actually runs.
           allowed_bots: "claude"
+          show_full_output: true
           # On @claude mentions the action handles the request interactively.
           # On PR events, run the structured Ring 2 review:
           prompt: |
