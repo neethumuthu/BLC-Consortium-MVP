@@ -22,6 +22,50 @@ Entry format:
 
 ---
 
+## 2026-08-12 — `ai-pr-review`'s Ring 2 gate completes "success" but posts zero comments
+
+**Phase:** 17 — AI SDLC Brownfield Rollout, Stage D5 (testing the PR-gated
+merge flow for real, on PR #11)
+**Symptom:** `ai-pr-review.yml` ran to completion with `conclusion: success`
+on two separate PR events, but `gh api .../pulls/11/reviews`,
+`.../issues/11/comments`, and `.../pulls/11/comments` were all empty after
+each run — no review, no comment, no inline comment, anywhere on the PR.
+Matches a failure this same file's own comments already described once
+before (an earlier PR did "11 turns of analysis then posted nothing").
+**Command / context:** `gh pr create` on a context-only change (no linked
+`openspec/changes/` folder), then watching `ai-pr-review.yml`'s
+`pull_request` trigger fire on `opened` and again on `synchronize`.
+**Root cause:** confirmed from the actual transcript, not guessed — enabling
+`show_full_output: true` (which itself required merging that one flag to
+`main` first, since GitHub refuses to run a modified `pull_request`-triggered
+workflow file until it matches the base branch exactly) showed the agent
+producing a complete, accurate review as its own final response text both
+times, but never once calling `gh pr comment` or `gh pr review`, despite
+both being in its `allowedTools`. The action's own built-in "Post buffered
+inline comments" step also reported "No buffered inline comments" both
+times — that mechanism requires the agent to use it explicitly; it does not
+auto-extract a review from ordinary response text. The prompt said "post
+findings as concise PR review comments," which reads as describing an
+outcome, not as an instruction to execute a specific tool call as a
+required last step — so the agent treated writing the analysis as the
+finished task. Separately (contributing friction, not the root cause): 3 of
+the agent's tool calls were denied both runs (`gh pr list`, `gh pr view`,
+`find`, `env`) — it was trying to self-discover the PR number via commands
+outside its allowlist.
+**Resolution:** rewrote the prompt to make "as your LAST action, you MUST
+run `gh pr comment --body \"...\"`" explicit and mandatory, and noted that a
+bare `gh pr comment` targets the current checked-out branch automatically
+(removing the reason it was hunting for the PR number via disallowed
+commands). Reverted `show_full_output` once diagnosed. Fixed directly on
+`main` (`.github/workflows/ai-pr-review.yml`), then merged into PR #11's
+branch to keep the workflow file in sync before merging.
+**Follow-up:** not re-tested with a fresh paid run after the fix (each real
+run costs real Anthropic API spend — the two diagnostic runs here cost
+~$1.14 and ~$1.21). The fix will get its first real exercise on whatever PR
+comes next.
+
+---
+
 ## 2026-08-11 — Single-org-endorsed `peer chaincode invoke` reports success but never commits
 
 **Phase:** 16 — staging wipe and fresh redeploy

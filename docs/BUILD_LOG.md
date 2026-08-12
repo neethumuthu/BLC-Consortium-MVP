@@ -2934,3 +2934,61 @@ proposal created during verification was voted to a clean `Rejected`
 resolution rather than left stuck open, unlike the pre-wipe incident.
 `agentic-qa`'s nightly schedule re-enabled once all of the above was
 confirmed.
+
+## Phase 17 — AI SDLC Brownfield Rollout: Stage D/F/G solo-doable follow-ups (2026-08-12)
+
+Closed out everything from the Brownfield Rollout tutorial's Stages D, F,
+and G that doesn't require the live team workshops in Stage E (explicitly
+parked, not attempted). Read the tutorial's own five PDF pages directly for
+the first time this pass — earlier evaluation work had been done from a
+second-hand description of it (see `docs/AI_SDLC_STAGE_B_EVALUATION_REPORT.md`'s
+own scope note on that gap).
+
+**Stage D, verified rather than assumed broken:** the GitHub Project
+("BLC-31 AI SDLC Board", #2) already had the exact `Stage`/`Change-ID`/
+`AI-assist` fields the tutorial specifies, and `project-sync.yml` already
+targeted that real board, not the leftover "project-sync test board" (#1).
+No fix needed for either. Branch protection remains hard-blocked — `gh api
+repos/.../branches/main/protection` returns `403 Upgrade to GitHub Pro or
+make this repository public`, unchanged from the earlier audit.
+
+**`capture-learning`, run for real this time, not just scoped.** Created
+`context/learnings/LEARNINGS.md` with its first genuine entry — the
+single-org-endorsement silent-commit bug from Phase 16 — and graduated it
+into `context/rules/general.md` as rule 9, per the skill's own step 4
+(unambiguous, permanent, not a one-off).
+
+**Stage F's `/opsx:onboard` is a real tooling gap, not something to fake.**
+Confirmed absent from both the starter-kit's shipped commands and this
+project's installed `.claude/commands/opsx/` (which has only apply/archive/
+explore/propose/sync/update). Stubbed `openspec/specs/certificate-lifecycle/
+spec.md` by hand instead — a real, shipped, previously-unspec'd capability —
+using proper Requirements/Scenarios (a plain-prose "one-paragraph stub" as
+the tutorial literally describes doesn't pass `openspec validate --strict`,
+which requires at least one Scenario per Requirement). Marked
+`confidence: low` and flagged for the human review the tutorial calls for
+before this graduates to a real reconstructed spec.
+
+**`context/product/PRODUCT.md` and `DOMAIN.md` drafted for the first time**
+— both directories didn't exist before today. Both explicitly marked as
+placeholders (`confidence: low`, `owner: unassigned`) pending the real
+Stage E workshop, not presented as a PM/PO's actual sign-off. Drafting
+`PRODUCT.md`'s "what we are NOT building" section surfaced a third real
+`context/CONFLICTS.md` row: `V1_PHASE_OVERVIEW.md`'s "governance/voting via
+the API is out of scope for v1.0" claim is now false, superseded by the
+`governance-vote-status` feature (issue #8, archived 2026-08-11) — the
+original 2026-07-30 `doc-archaeology` pass predates that feature by twelve
+days, so it couldn't have caught this one.
+
+**Stage D5, actually tested — and a real bug found in the process.** Opened
+PR #11 for this batch instead of pushing straight to `main`, specifically to
+exercise the Ring 2 gate (`ai-pr-review.yml`) for real. It completed
+"success" twice in a row while posting zero comments — see
+`docs/ERROR_LOG.md`'s entry for the diagnosis and fix. PR #11 merged clean
+after the fix landed on `main`.
+
+**Still open, not attempted:** Stage E's live team workshops (explicitly
+out of scope for this pass); Stage G's project-board Stage-field sync,
+Friday operating reviews, and ongoing `capture-learning` cadence — none of
+these are demonstrable from a single solo session, they need real usage
+over time.
