@@ -32,6 +32,14 @@ Any caller SHALL be able to list every institution on the ledger, via
 - **WHEN** one or more institutions exist on the ledger (any status)
 - **THEN** every one of them is returned, not only active ones
 
+**Known gap, not yet a requirement above:** `GET /institutions` has no
+pagination (`context/codebase/CONVENTIONS.md`'s "No pagination anywhere"
+note) — the full unpaginated array is returned on every call, same
+category of gap as `certificate-lifecycle`'s analogous list endpoint. Not
+written as a requirement since it describes an absence, not a specified
+behavior; flagging so a real reconstruction pass decides whether to spec
+pagination as required or leave it as a known limitation.
+
 ### Requirement: Look up a single institution
 Any caller SHALL be able to fetch a single institution by its MSP ID, via
 `GET /institutions/:institutionId`.
