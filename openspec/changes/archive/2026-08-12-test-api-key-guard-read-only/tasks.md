@@ -11,7 +11,7 @@
 
 - [x] 1a.1 Add a Jest config (`ts-jest` preset) to `package.json` — `npm test` failed
   before any test ran; no Jest config existed anywhere in `backend/`, so the
-  default Babel transform choked on TypeScript syntax. Contained fix: 5 lines,
+  default Babel transform choked on TypeScript syntax. Contained fix: 11 lines,
   activates an already-installed dependency (`ts-jest`), scoped to making this
   one new file runnable.
 
