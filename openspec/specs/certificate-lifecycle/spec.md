@@ -15,16 +15,19 @@ predates the project's adoption of OpenSpec (see
 `context/codebase/TESTING.md`'s existing note on this) and has real, working
 behavior in production — it was simply never spec'd.
 
-**This is a code-derived stub, not a reconstructed spec.** Two things
-blocked doing this properly (a human, ideally whoever does QA on
-certificates, reviewing reality against a draft — the same way
-`institution-governance-ui` and `credential-rotation` were built): there is
-no real next-quarter capability backlog to select 3-6 areas from yet
-(`context/product/` doesn't exist), and the tutorial's own tool for this
-step, `/opsx:onboard`, isn't part of the installed skill set (checked
-directly: absent from both the starter-kit's shipped commands and this
-project's `.claude/commands/opsx/`). Every requirement below is written
-directly from reading `chaincode/certificate-cc/*.go` and
+**This is a code-derived stub, not a reconstructed spec.** What blocked
+doing this properly (a human, ideally whoever does QA on certificates,
+reviewing reality against a draft — the same way `institution-governance-ui`
+and `credential-rotation` were built) is that there is no real next-quarter
+capability backlog to select 3-6 areas from yet (`context/product/` didn't
+exist at the time this was written). This was originally written for a
+different reason — an earlier, incorrect belief that OpenSpec's own
+`/opsx:onboard` tool for this step was missing from the CLI. That was wrong
+(see `.claude/skills/spec-onboard-replacement/SKILL.md`'s own correction
+note); `/opsx:onboard` exists once a custom workflow profile is enabled, it
+just does something different (a single-task guided tutorial) than a bulk
+capability sweep. Every requirement below is written directly from reading
+`chaincode/certificate-cc/*.go` and
 `backend/src/certificates/certificates.controller.ts` — confirm it holds up
 before raising `confidence` above `low`.
 
