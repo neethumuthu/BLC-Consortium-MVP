@@ -18,8 +18,11 @@ cd network && ./scripts/network.sh up                                       # br
 cd network && ./scripts/chaincode.sh deploy <institution-cc|certificate-cc>  # deploy/upgrade a chaincode
 ```
 
-Note: `backend`'s `npm run test` currently finds zero spec files (jest is installed
-but unwired) — see `context/codebase/TESTING.md` before trusting a green result.
+Note: `backend`'s `npm run test` now runs one real spec file (`ApiKeyGuard`'s
+`READ_ONLY_API_KEY` behavior, added 2026-08-12) — everything else in
+`backend/src` still has zero coverage. `backend`'s `npm run lint` still
+finds no `eslint` at all (not installed, no config) — see
+`context/codebase/TESTING.md` before trusting either result.
 
 ## Before you work
 
@@ -27,7 +30,7 @@ Read the context relevant to your task — do not guess:
 
 | Need | Read |
 |---|---|
-| What the product does, domain terms | `context/product/` (not yet created — see `docs/AI_SDLC_STAGE_B_EVALUATION_REPORT.md`) |
+| What the product does, domain terms | `context/product/PRODUCT.md`, `DOMAIN.md` (created 2026-08-12, `confidence: low`, pending real PM/PO review) |
 | Architecture, module boundaries | `context/codebase/ARCHITECTURE.md`, `STRUCTURE.md` |
 | How we write code here | `context/codebase/CONVENTIONS.md`, `context/rules/general.md` |
 | How to test | `context/codebase/TESTING.md` |

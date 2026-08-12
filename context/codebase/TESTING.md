@@ -5,6 +5,12 @@ confidence: medium
 owner: QA engineer
 ---
 
+**Backend testing status changed 2026-08-12** (PR #15): the first backend
+unit test now exists (`api-key.guard.spec.ts`), and a Jest config was added
+to `package.json` to make it runnable. Several claims below describing
+"zero test files"/"jest never wired up" predate that and are corrected in
+place, not left standing.
+
 # Testing
 
 ## How to run
@@ -21,13 +27,14 @@ cd network && go test ./...
 #   ?       blc/network/cmd/blcgen      [no test files]
 #   ?       blc/network/internal/generate [no test files]
 
-# Backend (NestJS) — DO NOT run this expecting real coverage:
-cd backend && npm run test    # runs `jest`, per backend/package.json's "test" script —
-                               # but there is no jest.config.*, no "jest" key in
-                               # package.json, and zero *.spec.ts/*.test.ts files
-                               # anywhere under backend/src. jest is installed
-                               # (jest, ts-jest, supertest, @nestjs/testing are all
-                               # in package.json devDependencies) but never wired up.
+# Backend (NestJS) — one real test file exists as of 2026-08-12:
+cd backend && npm run test    # runs `jest` via a "jest" block in package.json
+                               # (ts-jest preset), added 2026-08-12 alongside
+                               # the first spec file. Currently covers exactly
+                               # one thing: ApiKeyGuard's READ_ONLY_API_KEY
+                               # behavior (api-key.guard.spec.ts, 5 cases).
+                               # Everything else in backend/src still has zero
+                               # coverage - this is a first test, not a suite.
 
 # Frontend (Next.js) — no test command exists at all:
 # frontend/package.json scripts are only: dev, build, start, lint.
@@ -44,10 +51,10 @@ Honest inventory of what actually exists, by layer — there is no test pyramid 
 | `chaincode/institution-cc` | Real unit tests: `castvote_test.go`, `initledger_test.go`, `proposenewmember_test.go`, `registerinstitution_test.go`, `queries_test.go`, own `mocks_test.go` | (git history not examined) | No CI found — see below |
 | `network/internal/config` | One real test file, `validate_test.go`, covering `Validate()` | (git history not examined) | No CI found — see below |
 | `network/cmd/blcgen`, `network/internal/generate` | No test files | — | — |
-| `backend/src` (NestJS) | Zero test files. Test tooling (jest, ts-jest, supertest, `@nestjs/testing`) is present in `package.json` but unconfigured — no `jest.config.*`, no `jest` block in `package.json`. `npm run test` would currently fail to find any tests to run. | — | — |
+| `backend/src` (NestJS) | One real test file as of 2026-08-12: `common/guards/api-key.guard.spec.ts` (5 cases, `ApiKeyGuard`'s `READ_ONLY_API_KEY` behavior). `package.json` now has a working `jest` block (ts-jest preset). Everything else in `backend/src` still has zero coverage. | Confirmed via a real `/opsx:onboard` run (PR #15) | No CI found — see below |
 | `frontend/src` (Next.js) | Zero test files, zero test tooling installed. `package.json` scripts are `dev`/`build`/`start`/`lint` only. | — | — |
 
-This is a **unit-test-only** picture, confined entirely to the two Go chaincodes and one small Go config package. There is no integration test (nothing spins up a real Fabric network, CouchDB, or the NestJS app in-process against it), no end-to-end test, and no frontend test of any kind (unit, component, or e2e/Playwright).
+This is a **unit-test-only** picture, still overwhelmingly concentrated in the two Go chaincodes and one small Go config package — the single backend test (above) is real but covers one guard's one behavior, not a suite. There is no integration test (nothing spins up a real Fabric network, CouchDB, or the NestJS app in-process against it), no end-to-end test, and no frontend test of any kind (unit, component, or e2e/Playwright).
 
 ## Rules
 
@@ -57,7 +64,7 @@ Only rules with actual evidence in the repo are listed. Everything else is expli
 - **No enforced rule found for a required test-coverage threshold** — no coverage tool config (e.g. `jest.config` coverage thresholds, `nyc`, codecov config) exists for backend or frontend.
 - **Go chaincode tests do follow one consistent, real pattern**, evidenced by reading the test files directly: each package tests via its own package-internal fake ledger (not an external mocking framework), constructs a transaction context per test with `newTx(ledger, txID, callerMSP, timestamp, stubResponder)`, and asserts on both the function's direct return value and, in several tests, a follow-up read-back through the corresponding `Get*` query to confirm the write was actually committed correctly (not just that the function returned the right in-memory value) — e.g. `TestIssueCertificate_Success` in `chaincode/certificate-cc/issuecertificate_test.go` calls `sc.GetCertificate` after `sc.IssueCertificate` to verify readback.
 - **No enforced rule found for what to mock vs. not** in the two layers that do have any test infrastructure at all — the Go chaincode tests fake the whole Fabric stub/ledger rather than mocking individual calls; there is no equivalent guidance visible for backend, since it has no tests to derive a convention from.
-- **ESLint exists and is configured for both backend (`eslint "{src,test}/**/*.ts"`) and frontend (`eslint-config-next`'s `core-web-vitals` + `typescript` presets, `frontend/eslint.config.mjs`)**, and both `tsconfig.json`s enable `strict`-adjacent options (backend: `strictNullChecks`, `noImplicitAny`, `strictBindCallApply`; frontend: `strict: true`). These are real, checkable rules — but they are lint/type rules, not test rules, and there is no CI wiring found that would actually run `npm run lint` or `tsc` automatically on a PR.
+- **ESLint is configured for frontend** (`eslint-config-next`'s `core-web-vitals` + `typescript` presets, `frontend/eslint.config.mjs`) — confirmed runnable. **Backend's `lint` script is not actually functional**: `package.json` has `"lint": "eslint \"{src,test}/**/*.ts\""`, but `eslint` itself is absent from `package.json`'s dependencies, absent from `node_modules`, and there is no config file anywhere in `backend/` — running `npm run lint` fails with `eslint: not found` (confirmed directly, 2026-08-12, while adding the first backend unit test). Both `tsconfig.json`s do enable `strict`-adjacent options (backend: `strictNullChecks`, `noImplicitAny`, `strictBindCallApply`; frontend: `strict: true`) — that part holds for both. There is no CI wiring found that would actually run `npm run lint` or `tsc` automatically on a PR, for either side.
 
 ## Doc-derived additions
 
