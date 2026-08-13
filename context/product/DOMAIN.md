@@ -4,6 +4,7 @@ source: code-derived, no workshop yet
 confidence: low
 owner: unassigned — needs a PM/PO + tech lead pass; this is a placeholder
 ---
+
 # Domain
 
 **Same caveat as `PRODUCT.md`:** no `context/product/` existed before today,
