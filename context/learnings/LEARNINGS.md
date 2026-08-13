@@ -13,33 +13,9 @@ owner: context steward (rotating)
 
 ## 2026-08-13 — Fixing one stale context claim leaves its siblings stale unless the fix greps for the claim, not just the file that prompted it
 
-- **Symptom:** PR #15's Ring 2 review caught `TESTING.md`'s "ESLint is
-  configured for backend" claim as stale and fixed it in place — but left
-  two other claims falsified by that same PR's own diff standing in the
-  same file ("zero test files"/"jest never wired up") plus a mirrored note
-  in `AGENTS.md`. A second PR (#16) was needed to sweep all of them. This
-  gardener run then independently found a *third* instance of the identical
-  pattern: `TESTING.md`'s Ring 3 QA goals section still headed the
-  Certificate lifecycle QA goals with "no openspec/specs/ capability exists
-  for this yet," even though a real spec landed at
-  `openspec/specs/certificate-lifecycle/spec.md` in the very same commit
-  range — PR #16's sweep was scoped to the ESLint-area claims it was
-  written to fix, not to every claim of the same shape.
-- **Root cause:** A correction is scoped to the one claim/file a reviewer
-  or commit happened to notice, not to the underlying fact that changed.
-  When a single code change (e.g. "a spec now exists," "a test file now
-  exists") falsifies a claim, that claim is usually restated in more than
-  one context file, and a fix that only touches the file the diff already
-  touched will miss the others.
-- **Rule adopted:** When correcting a stale/false claim in `context/` (or
-  `AGENTS.md`), grep the rest of `context/` and `AGENTS.md` for restatements
-  of the same underlying fact before considering the correction done — fix
-  every instance in one pass, not the one instance a diff happened to
-  surface.
-- **Origin:** Ring 2 review on PR #15 (should-fix), fully swept in PR #16
-  (`bee88fc`); third recurrence found and fixed by context-gardener,
-  2026-08-13 (`context/codebase/TESTING.md`'s Certificate lifecycle QA goals
-  header).
+Graduated to a permanent rule after a third confirmed recurrence (PR #15 →
+swept in PR #16 → recurred again in PR #17). See `context/rules/general.md`,
+rule 11.
 
 ## 2026-08-12 — Correcting an already-archived change's docs needs a visible strikethrough + dated note, never a silent rewrite
 
