@@ -82,14 +82,14 @@ Fix: `frontend/src/lib/institutions.ts` now has a `QA_GUEST` account whose reque
 
 Goals are intents, not scripts — the agent should plan its own concrete paths per goal, including unhappy paths, and is not limited to the scenarios named below.
 
-### Certificate lifecycle (openspec/specs/certificate-lifecycle/spec.md — a code-derived stub, `confidence: low`, added 2026-08-12)
+### Certificate lifecycle (openspec/specs/certificate-lifecycle/spec.md — code-derived, human-reviewed 2026-08-13, `confidence: high`)
 - Issue a certificate as an active institution, then verify it — confirm the verification response reflects the certificate's real hash/issuer/status, not a generic success.
 - Attempt to revoke a certificate as an institution that did not issue it — confirm it's rejected, not silently permitted.
 - Revoke a certificate, then verify it again — confirm the verification result reflects the revoked status, not stale "valid" data.
 - Attempt to revoke an already-revoked certificate — confirm a clear rejection, not a duplicate revocation or a raw 500.
 - Verify a certificate ID that was never issued — confirm a clean "not found," not a crash or a false-positive "valid."
 
-### Institution directory (openspec/specs/institution-directory/spec.md — a code-derived stub, `confidence: low`, added 2026-08-12)
+### Institution directory (openspec/specs/institution-directory/spec.md — code-derived, human-reviewed 2026-08-13, `confidence: high`)
 - List every institution — confirm the response includes institutions of every status (not only active), per "Institutions listed."
 - Look up an existing institution by MSP ID — confirm the full record is returned, per "Institution exists."
 - Look up an institution ID with no matching record — confirm a clean rejection, not an empty/null result, per "Institution does not exist."
