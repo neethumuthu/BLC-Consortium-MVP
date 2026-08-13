@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 source: code-derived
 confidence: medium
 owner: QA engineer
@@ -82,12 +82,17 @@ Fix: `frontend/src/lib/institutions.ts` now has a `QA_GUEST` account whose reque
 
 Goals are intents, not scripts — the agent should plan its own concrete paths per goal, including unhappy paths, and is not limited to the scenarios named below.
 
-### Certificate lifecycle (no openspec/specs/ capability exists for this yet — it predates the project's adoption of openspec, so goals here are derived directly from `backend/src/certificates/` behavior, not a cited spec scenario)
+### Certificate lifecycle (openspec/specs/certificate-lifecycle/spec.md — a code-derived stub, `confidence: low`, added 2026-08-12)
 - Issue a certificate as an active institution, then verify it — confirm the verification response reflects the certificate's real hash/issuer/status, not a generic success.
 - Attempt to revoke a certificate as an institution that did not issue it — confirm it's rejected, not silently permitted.
 - Revoke a certificate, then verify it again — confirm the verification result reflects the revoked status, not stale "valid" data.
 - Attempt to revoke an already-revoked certificate — confirm a clear rejection, not a duplicate revocation or a raw 500.
 - Verify a certificate ID that was never issued — confirm a clean "not found," not a crash or a false-positive "valid."
+
+### Institution directory (openspec/specs/institution-directory/spec.md — a code-derived stub, `confidence: low`, added 2026-08-12)
+- List every institution — confirm the response includes institutions of every status (not only active), per "Institutions listed."
+- Look up an existing institution by MSP ID — confirm the full record is returned, per "Institution exists."
+- Look up an institution ID with no matching record — confirm a clean rejection, not an empty/null result, per "Institution does not exist."
 
 ### Institution governance UI (openspec/specs/institution-governance-ui/spec.md)
 - Propose a new member institution as an active institution, then confirm it appears in the open-proposals list with zero votes — per "Successful proposal."
@@ -99,6 +104,7 @@ Goals are intents, not scripts — the agent should plan its own concrete paths 
 - Attempt to vote on a proposal that's already Approved or Rejected — confirm the UI shows the proposal's final status rather than offering a voting control — per "Voting on a closed proposal is rejected."
 - Load the governance page as an institution that hasn't voted on anything yet — confirm every open proposal is listed with applicant name, tally, and this institution's not-yet-voted state — per "Pending proposals are listed."
 - Load the governance page and confirm the "Recently closed" section lists every already-resolved proposal (applicant name, final status, final tally, no voting control) — including one this institution never got to vote on before it resolved — per "View resolved proposals."
+- Fetch a single proposal directly by ID (one the caller has voted on, one it hasn't, and one that doesn't exist) — confirm the caller's own vote decision is present/absent correctly and a nonexistent ID is rejected rather than returning empty/null — per "Look up a single proposal by ID."
 
 ### Credential rotation (openspec/specs/credential-rotation/spec.md)
 - Change an institution's credential with the correct current value, then confirm the old credential is rejected and the new one works on the very next request — per "Successful credential change."
