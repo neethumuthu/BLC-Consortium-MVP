@@ -1,8 +1,8 @@
 ---
-last_verified: 2026-08-12
-source: code-derived, unreviewed
-confidence: low
-owner: unassigned — needs a human review pass before this confidence bumps
+last_verified: 2026-08-13
+source: code-derived, human-reviewed
+confidence: high
+owner: Neethu Muthu, reviewed 2026-08-13
 ---
 
 # Certificate Lifecycle Specification
@@ -15,12 +15,16 @@ predates the project's adoption of OpenSpec (see
 `context/codebase/TESTING.md`'s existing note on this) and has real, working
 behavior in production — it was simply never spec'd.
 
-**This is a code-derived stub, not a reconstructed spec.** What blocked
-doing this properly (a human, ideally whoever does QA on certificates,
-reviewing reality against a draft — the same way `institution-governance-ui`
-and `credential-rotation` were built) is that there is no real next-quarter
-capability backlog to select 3-6 areas from yet (`context/product/` didn't
-exist at the time this was written). This was originally written for a
+**Originally a code-derived stub, since reviewed against real behavior**
+(Neethu Muthu, 2026-08-13 — every requirement below checked live against
+running certificate-cc/backend behavior, both directly and via the
+frontend). What blocked doing this properly up front (a human, ideally
+whoever does QA on certificates, reviewing reality against a draft — the
+same way `institution-governance-ui` and `credential-rotation` were built)
+was that there was no real next-quarter capability backlog to select 3-6
+areas from yet (`context/product/` didn't exist at the time this was
+written) — that review has now happened solo instead, and held up with no
+corrections needed. This was originally written for a
 different reason — an earlier, incorrect belief that OpenSpec's own
 `/opsx:onboard` tool for this step was missing from the CLI. That was wrong
 (see `.claude/skills/spec-onboard-replacement/SKILL.md`'s own correction

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AlertTriangle, Building2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
@@ -47,8 +48,12 @@ export default async function InstitutionsPage() {
             </TableHeader>
             <TableBody>
               {institutions.map((institution) => (
-                <TableRow key={institution.institutionId}>
-                  <TableCell className="font-medium">{institution.name}</TableCell>
+                <TableRow key={institution.institutionId} className="cursor-pointer">
+                  <TableCell className="font-medium">
+                    <Link href={`/institutions/${institution.institutionId}`} className="hover:underline">
+                      {institution.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="capitalize">{institution.type}</TableCell>
                   <TableCell>
                     <StatusBadge status={institution.status} />

@@ -1,8 +1,8 @@
 ---
-last_verified: 2026-08-12
-source: code-derived, unreviewed
-confidence: low
-owner: unassigned — needs a human review pass before this confidence bumps
+last_verified: 2026-08-13
+source: code-derived, human-reviewed
+confidence: high
+owner: Neethu Muthu, reviewed 2026-08-13
 ---
 
 # Institution Directory Specification
@@ -16,15 +16,17 @@ API-reachable behavior that predates this project's adoption of OpenSpec —
 `institution-governance-ui`'s spec covers proposing/voting on membership,
 not the plain directory lookup this spec covers.
 
-**This is a code-derived stub, not a reconstructed spec** — same reason as
-`certificate-lifecycle`'s: no real next-quarter capability backlog exists
-yet to select from. (This was originally attributed to `/opsx:onboard`
-being missing from the CLI — that was wrong; see
-`.claude/skills/spec-onboard-replacement/SKILL.md`'s correction note.
-`/opsx:onboard` exists once a custom workflow profile is enabled, but it's a
-single-task guided tutorial, not a bulk capability sweep — a different tool
-than what generated this stub.) Confirm this holds up before raising
-`confidence` above `low`.
+**Originally a code-derived stub, since reviewed against real behavior**
+(Neethu Muthu, 2026-08-13 — every requirement below checked live, including
+building and testing a real UI page for the single-lookup case, which had
+no frontend path at all until this review surfaced the gap). Written up
+front for the same reason as `certificate-lifecycle`'s: no real
+next-quarter capability backlog existed yet to select from. (This was
+originally attributed to `/opsx:onboard` being missing from the CLI — that
+was wrong; see `.claude/skills/spec-onboard-replacement/SKILL.md`'s
+correction note. `/opsx:onboard` exists once a custom workflow profile is
+enabled, but it's a single-task guided tutorial, not a bulk capability
+sweep — a different tool than what generated this stub.)
 
 ## Requirements
 
