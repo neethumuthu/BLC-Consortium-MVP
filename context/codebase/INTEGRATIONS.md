@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-07-29
+last_verified: 2026-08-13
 source: code-derived
 confidence: medium
 owner: tech lead
@@ -59,4 +59,4 @@ Go chaincode (`chaincode/certificate-cc/main.go`, `chaincode/institution-cc/main
 ## Other observed gotchas
 
 - Frontend login is described in code comments as "cosmetic" — `frontend/src/lib/institutions.ts` hardcodes plaintext per-institution passwords (e.g. `"Fo6nder!Portal"`) directly in source, compared with a plain string equality check (no hashing). The file's own comment argues hashing wouldn't reduce real risk here since the "credential store" is the source file itself — noted as-is, not endorsed or disputed here.
-- No `.github/workflows`, so there is no automated CI check (build/lint/test) gating changes to backend, frontend, chaincode, or network tooling in this repository.
+- ~~No `.github/workflows`, so there is no automated CI check (build/lint/test) gating changes~~ — stale as of 2026-08-05, corrected 2026-08-13: `.github/workflows/` has 8 real CI workflows now (see `TESTING.md`) that run automatically on push/PR/schedule, including `ai-pr-review.yml`'s per-PR review. "Gating" is still accurate in one sense, though: branch protection cannot currently be configured at all (plan-tier limitation: the GitHub API returns `403 Upgrade to GitHub Pro or make this repository public` on this private repo, see `docs/BUILD_LOG.md` Phase 17), so nothing currently blocks a merge regardless of what any workflow reports.

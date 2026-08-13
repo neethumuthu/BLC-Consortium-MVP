@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 source: code-derived
 confidence: medium
 owner: QA engineer
@@ -47,11 +47,11 @@ Honest inventory of what actually exists, by layer — there is no test pyramid 
 
 | Layer | What exists | Written by | Runs automatically? |
 |---|---|---|---|
-| `chaincode/certificate-cc` | Real unit tests: `issuecertificate_test.go`, `revokecertificate_test.go`, `getcertificate_test.go`, `getcertificatesbyinstitution_test.go`, `verifycertificate_test.go`, plus a shared hand-rolled fake ledger/stub in `mocks_test.go` (no mocking library — a custom `fakeLedger`/`fakeStub` implementing `shim.ChaincodeStubInterface`, with real MVCC read/version conflict simulation) | (git history not examined) | No CI found — see below |
-| `chaincode/institution-cc` | Real unit tests: `castvote_test.go`, `initledger_test.go`, `proposenewmember_test.go`, `registerinstitution_test.go`, `queries_test.go`, own `mocks_test.go` | (git history not examined) | No CI found — see below |
-| `network/internal/config` | One real test file, `validate_test.go`, covering `Validate()` | (git history not examined) | No CI found — see below |
+| `chaincode/certificate-cc` | Real unit tests: `issuecertificate_test.go`, `revokecertificate_test.go`, `getcertificate_test.go`, `getcertificatesbyinstitution_test.go`, `verifycertificate_test.go`, plus a shared hand-rolled fake ledger/stub in `mocks_test.go` (no mocking library — a custom `fakeLedger`/`fakeStub` implementing `shim.ChaincodeStubInterface`, with real MVCC read/version conflict simulation) | (git history not examined) | No — CI exists (`.github/workflows/`, see Rules below) but none of its 8 workflows run `go test` against this package |
+| `chaincode/institution-cc` | Real unit tests: `castvote_test.go`, `initledger_test.go`, `proposenewmember_test.go`, `registerinstitution_test.go`, `queries_test.go`, own `mocks_test.go` | (git history not examined) | No — same as above |
+| `network/internal/config` | One real test file, `validate_test.go`, covering `Validate()` | (git history not examined) | No — same as above |
 | `network/cmd/blcgen`, `network/internal/generate` | No test files | — | — |
-| `backend/src` (NestJS) | One real test file as of 2026-08-12: `common/guards/api-key.guard.spec.ts` (5 cases, `ApiKeyGuard`'s `READ_ONLY_API_KEY` behavior). `package.json` now has a working `jest` block (ts-jest preset). Everything else in `backend/src` still has zero coverage. | Confirmed via a real `/opsx:onboard` run (PR #15) | No CI found — see below |
+| `backend/src` (NestJS) | One real test file as of 2026-08-12: `common/guards/api-key.guard.spec.ts` (5 cases, `ApiKeyGuard`'s `READ_ONLY_API_KEY` behavior). `package.json` now has a working `jest` block (ts-jest preset). Everything else in `backend/src` still has zero coverage. | Confirmed via a real `/opsx:onboard` run (PR #15) | No — CI exists but none of its 8 workflows run `npm run test`/`jest` against this package |
 | `frontend/src` (Next.js) | Zero test files, zero test tooling installed. `package.json` scripts are `dev`/`build`/`start`/`lint` only. | — | — |
 
 This is a **unit-test-only** picture, still overwhelmingly concentrated in the two Go chaincodes and one small Go config package — the single backend test (above) is real but covers one guard's one behavior, not a suite. There is no integration test (nothing spins up a real Fabric network, CouchDB, or the NestJS app in-process against it), no end-to-end test, and no frontend test of any kind (unit, component, or e2e/Playwright).
@@ -60,11 +60,11 @@ This is a **unit-test-only** picture, still overwhelmingly concentrated in the t
 
 Only rules with actual evidence in the repo are listed. Everything else is explicitly "no enforced rule found":
 
-- **No enforced rule found requiring tests for new backend or frontend code** — there is no CI configuration anywhere in this repository (searched for `.github/workflows` at the repo root; none exists — the only workflow YAML files in the whole checkout live under `AI SDLC/starter-kit/.github/workflows/`, which is an unrelated template/framework directory, not this project's own CI).
+- **No enforced rule found requiring tests for new backend or frontend code.** ~~There is no CI configuration anywhere in this repository~~ — **stale as of 2026-08-05, corrected 2026-08-13**: `.github/workflows/` now has 8 real, git-tracked CI workflows (`agentic-qa.yml`, `ai-pr-review.yml`, `context-gardener.yml`, `context-drift-check.yml`, `project-sync.yml`, `proposal-answer-sync.yml`, `requirements-nudge.yml`, `scheduler-dispatch.yml`) — several referenced by name elsewhere in this very file. None of them enforce a test requirement specifically, and nothing currently blocks a merge regardless of their outcome (branch protection cannot currently be configured at all — the GitHub API returns `403 Upgrade to GitHub Pro or make this repository public` on this private repo, see `docs/BUILD_LOG.md` Phase 17), so the underlying "no enforced rule" conclusion still holds; only the "no CI exists at all" premise was wrong.
 - **No enforced rule found for a required test-coverage threshold** — no coverage tool config (e.g. `jest.config` coverage thresholds, `nyc`, codecov config) exists for backend or frontend.
 - **Go chaincode tests do follow one consistent, real pattern**, evidenced by reading the test files directly: each package tests via its own package-internal fake ledger (not an external mocking framework), constructs a transaction context per test with `newTx(ledger, txID, callerMSP, timestamp, stubResponder)`, and asserts on both the function's direct return value and, in several tests, a follow-up read-back through the corresponding `Get*` query to confirm the write was actually committed correctly (not just that the function returned the right in-memory value) — e.g. `TestIssueCertificate_Success` in `chaincode/certificate-cc/issuecertificate_test.go` calls `sc.GetCertificate` after `sc.IssueCertificate` to verify readback.
 - **No enforced rule found for what to mock vs. not** in the two layers that do have any test infrastructure at all — the Go chaincode tests fake the whole Fabric stub/ledger rather than mocking individual calls; there is no equivalent guidance visible for backend, since it has no tests to derive a convention from.
-- **ESLint is configured for frontend** (`eslint-config-next`'s `core-web-vitals` + `typescript` presets, `frontend/eslint.config.mjs`) — confirmed runnable. **Backend's `lint` script is not actually functional**: `package.json` has `"lint": "eslint \"{src,test}/**/*.ts\""`, but `eslint` itself is absent from `package.json`'s dependencies, absent from `node_modules`, and there is no config file anywhere in `backend/` — running `npm run lint` fails with `eslint: not found` (confirmed directly, 2026-08-12, while adding the first backend unit test). Both `tsconfig.json`s do enable `strict`-adjacent options (backend: `strictNullChecks`, `noImplicitAny`, `strictBindCallApply`; frontend: `strict: true`) — that part holds for both. There is no CI wiring found that would actually run `npm run lint` or `tsc` automatically on a PR, for either side.
+- **ESLint is configured for frontend** (`eslint-config-next`'s `core-web-vitals` + `typescript` presets, `frontend/eslint.config.mjs`) — confirmed runnable. **Backend's `lint` script is not actually functional**: `package.json` has `"lint": "eslint \"{src,test}/**/*.ts\""`, but `eslint` itself is absent from `package.json`'s dependencies, absent from `node_modules`, and there is no config file anywhere in `backend/` — running `npm run lint` fails with `eslint: not found` (confirmed directly, 2026-08-12, while adding the first backend unit test). Both `tsconfig.json`s do enable `strict`-adjacent options (backend: `strictNullChecks`, `noImplicitAny`, `strictBindCallApply`; frontend: `strict: true`) — that part holds for both. None of the 8 CI workflows run `npm run lint` or `tsc` automatically on a PR, for either side.
 
 ## Doc-derived additions
 
@@ -82,12 +82,17 @@ Fix: `frontend/src/lib/institutions.ts` now has a `QA_GUEST` account whose reque
 
 Goals are intents, not scripts — the agent should plan its own concrete paths per goal, including unhappy paths, and is not limited to the scenarios named below.
 
-### Certificate lifecycle (no openspec/specs/ capability exists for this yet — it predates the project's adoption of openspec, so goals here are derived directly from `backend/src/certificates/` behavior, not a cited spec scenario)
+### Certificate lifecycle (openspec/specs/certificate-lifecycle/spec.md — code-derived, human-reviewed 2026-08-13, `confidence: high`)
 - Issue a certificate as an active institution, then verify it — confirm the verification response reflects the certificate's real hash/issuer/status, not a generic success.
 - Attempt to revoke a certificate as an institution that did not issue it — confirm it's rejected, not silently permitted.
 - Revoke a certificate, then verify it again — confirm the verification result reflects the revoked status, not stale "valid" data.
 - Attempt to revoke an already-revoked certificate — confirm a clear rejection, not a duplicate revocation or a raw 500.
 - Verify a certificate ID that was never issued — confirm a clean "not found," not a crash or a false-positive "valid."
+
+### Institution directory (openspec/specs/institution-directory/spec.md — code-derived, human-reviewed 2026-08-13, `confidence: high`)
+- List every institution — confirm the response includes institutions of every status (not only active), per "Institutions listed."
+- Look up an existing institution by MSP ID — confirm the full record is returned, per "Institution exists."
+- Look up an institution ID with no matching record — confirm a clean rejection, not an empty/null result, per "Institution does not exist."
 
 ### Institution governance UI (openspec/specs/institution-governance-ui/spec.md)
 - Propose a new member institution as an active institution, then confirm it appears in the open-proposals list with zero votes — per "Successful proposal."
@@ -99,6 +104,8 @@ Goals are intents, not scripts — the agent should plan its own concrete paths 
 - Attempt to vote on a proposal that's already Approved or Rejected — confirm the UI shows the proposal's final status rather than offering a voting control — per "Voting on a closed proposal is rejected."
 - Load the governance page as an institution that hasn't voted on anything yet — confirm every open proposal is listed with applicant name, tally, and this institution's not-yet-voted state — per "Pending proposals are listed."
 - Load the governance page and confirm the "Recently closed" section lists every already-resolved proposal (applicant name, final status, final tally, no voting control) — including one this institution never got to vote on before it resolved — per "View resolved proposals."
+- Fetch an existing proposal directly by ID (one you've voted on, one you haven't) — confirm your own vote decision is present/absent correctly — per "Proposal exists."
+- Fetch a proposal ID that doesn't exist — confirm it's rejected rather than returning empty/null — per "Proposal does not exist."
 
 ### Credential rotation (openspec/specs/credential-rotation/spec.md)
 - Change an institution's credential with the correct current value, then confirm the old credential is rejected and the new one works on the very next request — per "Successful credential change."

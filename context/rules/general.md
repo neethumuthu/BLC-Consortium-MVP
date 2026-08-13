@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-12
+last_verified: 2026-08-13
 source: retroactive
 confidence: medium
 owner: tech lead
@@ -59,11 +59,17 @@ owner: tech lead
    `context/learnings/LEARNINGS.md`.)
 10. Anything meant to run unattended on a staging/production host runs as a
     `systemd` service, not a bare/background process.
+11. When correcting a stale/false claim in `context/` or `AGENTS.md`, grep the
+    rest of `context/` and `AGENTS.md` for restatements of the same underlying
+    fact before considering the correction done — fix every instance in one
+    pass, not just the one instance a diff happened to surface. (Real
+    pattern, recurred 3 times: PR #15 → swept in PR #16 → recurred again in
+    PR #17 — see `context/learnings/LEARNINGS.md`.)
 
 ## Code
 
-11. Chaincode must never call `time.Now()` — use the transaction's own timestamp
+12. Chaincode must never call `time.Now()` — use the transaction's own timestamp
     (`ctx.GetStub().GetTxTimestamp()`), since every endorsing peer must agree
     deterministically.
-12. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
+13. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
     packaging.
