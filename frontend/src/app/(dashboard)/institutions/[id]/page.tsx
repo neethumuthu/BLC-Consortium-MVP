@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/session";
 import { backendFetch, BackendError } from "@/lib/backend";
 import { humanizeBackendError } from "@/lib/error-messages";
 import { formatDate } from "@/lib/format";
+import { displayNameFor } from "@/lib/institutions";
 import type { Institution } from "@/lib/types";
 
 export default async function InstitutionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,7 +63,7 @@ export default async function InstitutionDetailPage({ params }: { params: Promis
                   <p className="text-sm font-medium">Approved by</p>
                   <ul className="space-y-1 text-sm text-muted-foreground">
                     {institution.approvedBy.map((msp) => (
-                      <li key={msp}>{msp}</li>
+                      <li key={msp}>{displayNameFor(msp)}</li>
                     ))}
                   </ul>
                 </div>
