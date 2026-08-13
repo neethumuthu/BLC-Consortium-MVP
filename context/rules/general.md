@@ -68,8 +68,8 @@ owner: tech lead
 
 ## Code
 
-11. Chaincode must never call `time.Now()` — use the transaction's own timestamp
+12. Chaincode must never call `time.Now()` — use the transaction's own timestamp
     (`ctx.GetStub().GetTxTimestamp()`), since every endorsing peer must agree
     deterministically.
-12. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
+13. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
     packaging.
