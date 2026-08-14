@@ -58,4 +58,31 @@ describe("DedupeStore", () => {
     const store = new DedupeStore(storePath);
     expect(store.alreadyRelayed("1700000000.000000")).toBeUndefined();
   });
+
+  it("claims a thread once, then refuses a second claim until released", () => {
+    const store = new DedupeStore(storePath);
+    expect(store.claimThread("1700000000.000000")).toBe(true);
+    expect(store.claimThread("1700000000.000000")).toBe(false);
+
+    store.releaseClaim("1700000000.000000");
+    expect(store.claimThread("1700000000.000000")).toBe(true);
+  });
+
+  it("treats claims on different threads as independent", () => {
+    const store = new DedupeStore(storePath);
+    expect(store.claimThread("1700000000.000000")).toBe(true);
+    expect(store.claimThread("1700000001.000000")).toBe(true);
+  });
+
+  it("does not leave a truncated file behind if writing the store is interrupted mid-write", () => {
+    // Not directly simulable without mocking fs internals - this instead
+    // confirms the real behavior the fix relies on: after a normal
+    // recordRelayed, no leftover .tmp file remains and the real path
+    // holds a complete, parseable record.
+    const store = new DedupeStore(storePath);
+    store.recordRelayed("1700000000.000000", "20", "2026-08-14T00:00:00.000Z");
+
+    expect(existsSync(`${storePath}.tmp`)).toBe(false);
+    expect(existsSync(storePath)).toBe(true);
+  });
 });

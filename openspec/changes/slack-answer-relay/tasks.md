@@ -24,6 +24,10 @@
 - [x] 1.14 Third Ring 2 review pass, finding addressed:
   - **[should-fix]** `dedupe.recordRelayed(...)` (a synchronous disk write) ran with no `try/catch` after a successful GitHub post — if it threw (disk full, bad `RELAYED_STORE_PATH` on the VM), the thread would never be marked relayed on disk despite the comment having genuinely posted, risking a duplicate comment on a later follow-up in the same thread. Now caught: the GitHub comment already succeeded, so the PM is not told anything failed (that would be false) and still gets the ✅ reaction; a loud `console.error("DEDUPE PERSISTENCE FAILED...")` signals the ops-level problem instead. 1 new regression test.
   - 44/44 tests passing (7 suites); `tsc --noEmit` and `npm run build` both clean.
+- [x] 1.15 Fourth Ring 2 review pass, findings addressed:
+  - **[should-fix]** Real race: `alreadyRelayed`'s synchronous read and `recordRelayed`'s write were separated by two `await`s (`fetchThreadParentText`, `postIssueComment`), so two near-simultaneous replies in the same thread (different `event_id`s) could both pass the check before either finished, producing two GitHub comments. Added `DedupeStore.claimThread`/`releaseClaim` - the same synchronous check-and-set `isDuplicateEvent` already used for `event_id`, applied to `thread_ts`. Claimed right after the `alreadyRelayed` check (before any `await`); released on every path that doesn't actually relay (`none`, `ambiguous`, GitHub-post failure) so a genuine retry isn't blocked forever. 3 new regression tests, including one that genuinely exercises the interleaving via unawaited concurrent `handle()` calls.
+  - **[nit]** `DedupeStore.persist()` was a direct `writeFileSync`, not atomic - a crash mid-write could leave a truncated file. Now write-to-temp-then-`renameSync`, atomic on the same filesystem.
+  - 49/49 tests passing (7 suites); `tsc --noEmit` and `npm run build` both clean.
 
 ## 2. Phase 1 — blocked on Dominik/workspace-admin
 

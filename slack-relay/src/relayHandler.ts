@@ -16,7 +16,8 @@ export type RelayOutcome =
   | { action: "no_issue_link_found" }
   | { action: "ambiguous"; candidates: string[] }
   | { action: "relayed"; issueNumber: string }
-  | { action: "relay_failed"; issueNumber: string; error: string };
+  | { action: "relay_failed"; issueNumber: string; error: string }
+  | { action: "concurrent_reply_in_progress" };
 
 export class RelayHandler {
   constructor(
@@ -52,6 +53,22 @@ export class RelayHandler {
       return { action: "already_relayed", issueNumber: existing.issueNumber };
     }
 
+    // Synchronous check-and-set, before any `await` below - closes the
+    // race where two near-simultaneous replies in the same thread (e.g.
+    // a quick correction right after the first answer) could both pass
+    // the `alreadyRelayed` read above before either finishes the async
+    // work that would make the second one see it. Same technique
+    // `isDuplicateEvent` already uses for `event_id`, applied to
+    // `thread_ts` too.
+    if (!this.dedupe.claimThread(threadTs!)) {
+      await this.slack.postThreadReply(
+        channel,
+        threadTs!,
+        "Another reply in this thread is already being relayed right now - not opening a second one.",
+      );
+      return { action: "concurrent_reply_in_progress" };
+    }
+
     const parentText = await this.slack.fetchThreadParentText(channel, threadTs!);
     const resolution = resolveIssueNumber(
       parentText,
@@ -61,6 +78,10 @@ export class RelayHandler {
     );
 
     if (resolution.status === "none") {
+      // No relay happened - release the claim so a genuine follow-up
+      // reply in this thread (e.g. the PM clarifying) isn't permanently
+      // blocked by a claim nothing ever fulfilled.
+      this.dedupe.releaseClaim(threadTs!);
       await this.slack.postThreadReply(
         channel,
         threadTs!,
@@ -70,6 +91,7 @@ export class RelayHandler {
     }
 
     if (resolution.status === "ambiguous") {
+      this.dedupe.releaseClaim(threadTs!);
       const list = resolution.candidates.map((n) => `#${n}`).join(", ");
       await this.slack.postThreadReply(
         channel,
@@ -85,8 +107,9 @@ export class RelayHandler {
       // The PM must know their answer did NOT make it to GitHub - silence
       // here would contradict the whole point of this relay (reliably
       // producing the comment a human would type). Deliberately not
-      // recorded in the dedupe store, so a retry (theirs or Slack's) can
-      // still succeed.
+      // recorded in the dedupe store, and the claim is released, so a
+      // retry (theirs or Slack's) can still succeed.
+      this.dedupe.releaseClaim(threadTs!);
       const message = error instanceof Error ? error.message : String(error);
       await this.slack.postThreadReply(
         channel,

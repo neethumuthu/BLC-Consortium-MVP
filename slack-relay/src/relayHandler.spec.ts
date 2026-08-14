@@ -137,6 +137,37 @@ describe("RelayHandler", () => {
     consoleError.mockRestore();
   });
 
+  it("closes the race between two near-simultaneous replies in the same thread - only one relays", async () => {
+    const first = buildEvent({ text: "let's go with option 1" });
+    const second = buildEvent({ text: "actually, option 1" });
+    second.event_id = "Ev002";
+
+    // Not awaited between calls, so both run synchronously up to their
+    // first await (fetchThreadParentText) before either resolves -
+    // genuinely exercising the interleaving the claim exists to close.
+    const [outcome1, outcome2] = await Promise.all([
+      handler.handle(first),
+      handler.handle(second),
+    ]);
+    const outcomes = [outcome1, outcome2];
+
+    expect(outcomes).toContainEqual({ action: "relayed", issueNumber: "20" });
+    expect(outcomes).toContainEqual({ action: "concurrent_reply_in_progress" });
+    expect(github.postIssueComment).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the claim on a no-issue-link outcome, so a genuine follow-up reply can still relay", async () => {
+    slack.fetchThreadParentText.mockResolvedValueOnce("no links in here at all");
+
+    const first = await handler.handle(buildEvent({ text: "sure" }));
+    expect(first).toEqual({ action: "no_issue_link_found" });
+
+    const followUp = buildEvent({ text: "sorry, meant to reply on issue 20" });
+    followUp.event_id = "Ev002";
+    const second = await handler.handle(followUp);
+    expect(second).toEqual({ action: "relayed", issueNumber: "20" });
+  });
+
   it("cleans Slack's escaped/mrkdwn text before posting it as a GitHub comment", async () => {
     const outcome = await handler.handle(
       buildEvent({

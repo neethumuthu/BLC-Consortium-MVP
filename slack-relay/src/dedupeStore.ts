@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 
 interface RelayedThreadRecord {
   issueNumber: string;
@@ -15,9 +15,18 @@ interface RelayedThreadRecord {
  *   fragment, or the service restarts between the first reply and a
  *   second one) - a restart must not forget which threads already
  *   produced a GitHub comment.
+ *
+ * A third, in-memory-only "claim" set closes a real race: `alreadyRelayed`
+ * is a synchronous read, but the async work between checking it and
+ * calling `recordRelayed` (fetching the thread, posting to GitHub) leaves
+ * a window where two near-simultaneous replies in the same thread could
+ * both pass the check before either finishes. `claimThread`/`releaseClaim`
+ * give callers the same synchronous check-and-set `isDuplicateEvent`
+ * already uses for `event_id`, applied to `thread_ts` instead.
  */
 export class DedupeStore {
   private readonly seenEventIds = new Set<string>();
+  private readonly claimedThreads = new Set<string>();
   private relayedThreads: Record<string, RelayedThreadRecord>;
 
   constructor(private readonly storePath: string) {
@@ -39,7 +48,13 @@ export class DedupeStore {
   }
 
   private persist(): void {
-    writeFileSync(this.storePath, JSON.stringify(this.relayedThreads, null, 2));
+    // Write-then-rename rather than a direct writeFileSync, so a crash
+    // mid-write can never leave a truncated/corrupt store file - rename
+    // is atomic on the same filesystem, a partial write to the temp file
+    // is not visible under the real path until it's complete.
+    const tempPath = `${this.storePath}.tmp`;
+    writeFileSync(tempPath, JSON.stringify(this.relayedThreads, null, 2));
+    renameSync(tempPath, this.storePath);
   }
 
   isDuplicateEvent(eventId: string): boolean {
@@ -52,6 +67,20 @@ export class DedupeStore {
 
   alreadyRelayed(threadTs: string): RelayedThreadRecord | undefined {
     return this.relayedThreads[threadTs];
+  }
+
+  /** Synchronous check-and-set - call before any `await` in the same request. */
+  claimThread(threadTs: string): boolean {
+    if (this.claimedThreads.has(threadTs)) {
+      return false;
+    }
+    this.claimedThreads.add(threadTs);
+    return true;
+  }
+
+  /** Only for a path that did NOT relay anything, so a genuine retry isn't blocked forever. */
+  releaseClaim(threadTs: string): void {
+    this.claimedThreads.delete(threadTs);
   }
 
   recordRelayed(threadTs: string, issueNumber: string, relayedAt: string): void {
