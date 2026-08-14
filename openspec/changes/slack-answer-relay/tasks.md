@@ -10,7 +10,7 @@
 - [x] 1.8 Wire it together in `main.ts` (Express app, raw-body capture for signature verification, `/slack/events` + `/healthz`)
 - [x] 1.9 Unit tests against synthetic payloads: valid reply, tampered/expired/missing signature, wrong user, edited-message subtype, single-link parent, multi-link parent with and without a disambiguating hint, duplicate `event_id`, already-relayed thread, no-issue-link parent — all passing (26/26)
 - [x] 1.10 Verify the production build compiles (`npm run build` → `dist/main.js`)
-- [x] 1.11 Fix `ai-pr-review.yml`'s missing PR-vs-tracking-issue exclusion guard (mirrors `proposal-answer-sync.yml`'s existing pattern)
+- [x] 1.11 ~~Fix `ai-pr-review.yml`'s missing PR-vs-tracking-issue exclusion guard~~ — pulled out and landed directly on `main` instead, not as part of this change (bundling it here broke Ring 2 review of this PR entirely — GitHub Actions won't run a modified workflow file against the PR that changes it)
 
 ## 2. Phase 1 — blocked on Dominik/workspace-admin
 

@@ -30,12 +30,12 @@ posts the same `@claude <answer>` comment a human would already type.
 - `proposal-answer-sync.yml`'s own scope, trigger, and behavior are
   completely unchanged — the relay produces the same comment a human
   would type; nothing downstream needs to know the difference.
-- Adjacent fix: `ai-pr-review.yml` gains the same PR-vs-tracking-issue
-  exclusion guard `proposal-answer-sync.yml` already has, so an
-  `@claude <answer>` reply on an "Open question: " issue is handled
-  exactly once (by `proposal-answer-sync.yml`), not double-fired into a
-  Ring 2 review attempt too — this bug already existed before the relay,
-  but the relay makes it fire automatically and more often.
+- The `ai-pr-review.yml` PR-vs-tracking-issue guard fix originally
+  planned as an adjacent fix here was **pulled out and landed separately,
+  directly on `main`**, not as part of this change — GitHub Actions won't
+  run a modified workflow file against the PR that changes it, so
+  bundling it here would have meant this PR could never get a real Ring 2
+  review of the actual relay code. See `docs/BUILD_LOG.md` for that fix.
 
 ## Capabilities
 
@@ -59,7 +59,8 @@ domain the existing specs describe.
 - New (VM-only, not committed): systemd unit `blc-slack-relay`, a Caddy
   `handle /slack/events*` block, a `.env` with the bot token/signing
   secret/`SLACK_RELAY_GH_PAT`.
-- Modified: `.github/workflows/ai-pr-review.yml` (the guard fix).
 - No change to `requirements-nudge.yml` or `proposal-answer-sync.yml`.
+- `.github/workflows/ai-pr-review.yml`'s guard fix landed separately,
+  directly on `main`, not as part of this change (see "What Changes").
 - No new NSG rule, no new DNS — reached through the existing Caddy
   site/cert on port 443.
