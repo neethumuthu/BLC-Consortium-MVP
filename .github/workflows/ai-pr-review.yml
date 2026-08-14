@@ -10,9 +10,13 @@ on:
 
 jobs:
   review:
+    # issue_comment also fires on our own "Open question: <id>" tracking
+    # issues - excluded explicitly so an @claude <answer> reply there is
+    # handled exactly once, by proposal-answer-sync.yml, not also here.
     if: |
       github.event_name == 'pull_request' ||
-      contains(github.event.comment.body, '@claude')
+      (contains(github.event.comment.body, '@claude') &&
+       !startsWith(github.event.issue.title, 'Open question: '))
     runs-on: ubuntu-latest
     permissions:
       contents: read
