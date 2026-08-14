@@ -49,9 +49,10 @@
 
 ## 3. Phase 2 — deploy
 
-- [ ] 3.1 Create `blc-slack-relay.service` on the staging VM (template already pulled and verified in `design.md`)
-- [ ] 3.2 Add the `handle /slack/events*` block to the existing Caddyfile, reload Caddy
-- [ ] 3.3 Write the relay's `.env` (bot token, signing secret, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`)
+- [x] 3.0 Pull the merged code onto the staging VM (`783b72c` → `82a1627`), `npm install` + `npm run build`, confirmed `dist/main.js` exists
+- [x] 3.1 Create `blc-slack-relay.service` on the staging VM (template already pulled and verified in `design.md`) - created and `daemon-reload`'d, deliberately left **disabled/inactive** since `.env` (3.3) doesn't exist yet and the service would just fail to start
+- [ ] 3.2 Add the `handle /slack/events*` block to the existing Caddyfile, reload Caddy - held until 3.4, no point routing to a port nothing listens on yet
+- [ ] 3.3 Write the relay's `.env` (bot token, signing secret, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`) - blocked on Phase 1 (2.1/2.2)
 - [ ] 3.4 Enable and start the service; confirm Slack's Request URL verification succeeds against it
 
 ## 4. Phase 3 — live end-to-end verification
