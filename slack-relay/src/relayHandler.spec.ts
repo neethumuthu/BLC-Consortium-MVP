@@ -55,12 +55,13 @@ describe("RelayHandler", () => {
   let dir: string;
   let slack: jest.Mocked<SlackClient>;
   let github: jest.Mocked<GithubClient>;
+  let dedupe: DedupeStore;
   let handler: RelayHandler;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "slack-relay-test-"));
     const config = buildConfig(join(dir, "relayed-threads.json"));
-    const dedupe = new DedupeStore(config.relayedStorePath);
+    dedupe = new DedupeStore(config.relayedStorePath);
 
     slack = {
       fetchThreadParentText: jest.fn().mockResolvedValue(SINGLE_LINK_PARENT),
@@ -112,6 +113,28 @@ describe("RelayHandler", () => {
     retryEvent.event_id = "Ev002";
     const retryOutcome = await handler.handle(retryEvent);
     expect(retryOutcome).toEqual({ action: "relayed", issueNumber: "20" });
+  });
+
+  it("still reacts and reports success when the GitHub post succeeds but persisting the dedup record fails", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    jest.spyOn(dedupe, "recordRelayed").mockImplementation(() => {
+      throw new Error("ENOSPC: no space left on device");
+    });
+
+    const outcome = await handler.handle(buildEvent());
+
+    // The GitHub comment genuinely succeeded - the PM must not be told
+    // it failed, and should still see the confirmation reaction.
+    expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
+    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude let's go with option 1");
+    expect(slack.addReaction).toHaveBeenCalledWith(CHANNEL, "1700000010.000100", "white_check_mark");
+    expect(slack.postThreadReply).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("DEDUPE PERSISTENCE FAILED"),
+      expect.any(Error),
+    );
+
+    consoleError.mockRestore();
   });
 
   it("cleans Slack's escaped/mrkdwn text before posting it as a GitHub comment", async () => {

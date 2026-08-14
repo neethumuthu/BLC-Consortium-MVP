@@ -21,6 +21,9 @@
   - **[nit]** A failed GitHub post (network blip, API error) was silently swallowed (`console.error` only) with no Slack feedback — contradicted the change's own reliability goal. `relayHandler.ts` now catches it, posts an in-thread notice, returns a new `relay_failed` outcome, and deliberately does not record the thread as relayed so a retry can still succeed. 1 new regression test.
   - **[nit]** `design.md` said "raw reply text"; updated to reflect the `slackTextToPlainText()` cleanup added in 1.12.
   - 43/43 tests passing (7 suites); `tsc --noEmit` and `npm run build` both clean.
+- [x] 1.14 Third Ring 2 review pass, finding addressed:
+  - **[should-fix]** `dedupe.recordRelayed(...)` (a synchronous disk write) ran with no `try/catch` after a successful GitHub post — if it threw (disk full, bad `RELAYED_STORE_PATH` on the VM), the thread would never be marked relayed on disk despite the comment having genuinely posted, risking a duplicate comment on a later follow-up in the same thread. Now caught: the GitHub comment already succeeded, so the PM is not told anything failed (that would be false) and still gets the ✅ reaction; a loud `console.error("DEDUPE PERSISTENCE FAILED...")` signals the ops-level problem instead. 1 new regression test.
+  - 44/44 tests passing (7 suites); `tsc --noEmit` and `npm run build` both clean.
 
 ## 2. Phase 1 — blocked on Dominik/workspace-admin
 

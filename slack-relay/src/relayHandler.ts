@@ -96,7 +96,24 @@ export class RelayHandler {
       return { action: "relay_failed", issueNumber: resolution.issueNumber, error: message };
     }
 
-    this.dedupe.recordRelayed(threadTs!, resolution.issueNumber, new Date().toISOString());
+    try {
+      this.dedupe.recordRelayed(threadTs!, resolution.issueNumber, new Date().toISOString());
+    } catch (error) {
+      // The GitHub comment already posted successfully - telling the PM
+      // it failed would be a lie. But an unrecorded relay means a later
+      // follow-up in this thread could produce a duplicate GitHub
+      // comment, which is exactly what this persisted store exists to
+      // prevent (dedupeStore.ts's own header comment). Loud server-side
+      // signal instead, since this is an ops-level disk/permissions
+      // problem (e.g. a bad RELAYED_STORE_PATH on the VM), not something
+      // the PM can act on.
+      // eslint-disable-next-line no-console
+      console.error(
+        `DEDUPE PERSISTENCE FAILED after a successful relay (issue #${resolution.issueNumber}, thread ${threadTs}) - a later reply in this thread may cause a duplicate GitHub comment:`,
+        error,
+      );
+    }
+
     await this.slack.addReaction(channel, payload.event.ts, CHECKMARK_EMOJI);
 
     return { action: "relayed", issueNumber: resolution.issueNumber };
