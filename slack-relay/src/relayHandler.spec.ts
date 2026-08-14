@@ -115,6 +115,62 @@ describe("RelayHandler", () => {
     expect(retryOutcome).toEqual({ action: "relayed", issueNumber: "20" });
   });
 
+  it("releases the claim and notifies the PM when looking up the thread's parent message fails", async () => {
+    slack.fetchThreadParentText.mockRejectedValueOnce(new Error("conversations.replies failed"));
+
+    const outcome = await handler.handle(buildEvent());
+
+    expect(outcome).toEqual({
+      action: "thread_lookup_failed",
+      error: "conversations.replies failed",
+    });
+    expect(github.postIssueComment).not.toHaveBeenCalled();
+    expect(slack.postThreadReply).toHaveBeenCalledWith(
+      CHANNEL,
+      "1700000000.000000",
+      expect.stringContaining("Couldn't look up"),
+    );
+
+    // The claim must have been released - a later retry in the same
+    // thread must not be stuck as concurrent_reply_in_progress forever.
+    const retryEvent = buildEvent({ text: "retrying" });
+    retryEvent.event_id = "Ev002";
+    const retryOutcome = await handler.handle(retryEvent);
+    expect(retryOutcome).toEqual({ action: "relayed", issueNumber: "20" });
+  });
+
+  it("does not crash and still returns the real outcome when even the best-effort Slack notice fails", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    slack.fetchThreadParentText.mockRejectedValueOnce(new Error("lookup failed"));
+    slack.postThreadReply.mockRejectedValueOnce(new Error("chat.postMessage also failed"));
+
+    const outcome = await handler.handle(buildEvent());
+
+    expect(outcome).toEqual({ action: "thread_lookup_failed", error: "lookup failed" });
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to post a notice"),
+      expect.any(Error),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("still reports success when the relay itself succeeds but the confirmation reaction fails", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    slack.addReaction.mockRejectedValueOnce(new Error("not_in_channel"));
+
+    const outcome = await handler.handle(buildEvent());
+
+    expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
+    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude let's go with option 1");
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to add the confirmation reaction"),
+      expect.any(Error),
+    );
+
+    consoleError.mockRestore();
+  });
+
   it("still reacts and reports success when the GitHub post succeeds but persisting the dedup record fails", async () => {
     const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
     jest.spyOn(dedupe, "recordRelayed").mockImplementation(() => {

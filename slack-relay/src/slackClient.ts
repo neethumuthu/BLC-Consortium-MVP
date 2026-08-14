@@ -1,9 +1,21 @@
-import { SlackConversationsRepliesResponse } from "./types";
+import { SlackApiResponse, SlackConversationsRepliesResponse } from "./types";
 
 export class SlackClient {
   constructor(private readonly botToken: string) {}
 
-  private async call<T>(method: string, body: Record<string, unknown>): Promise<T> {
+  /**
+   * Every Slack Web API method shares the same `{ok, error}` envelope,
+   * including on HTTP 200 - a scope/auth/rate-limit failure (e.g. the bot
+   * not yet invited to the channel, per Phase 1's own task 2.3) never
+   * shows up as a thrown fetch error or a non-2xx status, only as
+   * `ok: false` in an otherwise-successful response. Checked once, here,
+   * so every caller (fetchThreadParentText, addReaction, postThreadReply)
+   * gets this for free instead of failing silently.
+   */
+  private async call<T extends SlackApiResponse>(
+    method: string,
+    body: Record<string, unknown>,
+  ): Promise<T> {
     const response = await fetch(`https://slack.com/api/${method}`, {
       method: "POST",
       headers: {
@@ -12,7 +24,11 @@ export class SlackClient {
       },
       body: JSON.stringify(body),
     });
-    return (await response.json()) as T;
+    const result = (await response.json()) as T;
+    if (!result.ok) {
+      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
+    }
+    return result;
   }
 
   /**
@@ -27,17 +43,17 @@ export class SlackClient {
       ts: threadTs,
       limit: 1,
     });
-    if (!result.ok || !result.messages || result.messages.length === 0) {
-      throw new Error(`Failed to fetch thread parent: ${result.error ?? "unknown error"}`);
+    if (!result.messages || result.messages.length === 0) {
+      throw new Error("conversations.replies returned no messages for this thread");
     }
     return result.messages[0].text ?? "";
   }
 
   async addReaction(channel: string, timestamp: string, emoji: string): Promise<void> {
-    await this.call("reactions.add", { channel, timestamp, name: emoji });
+    await this.call<SlackApiResponse>("reactions.add", { channel, timestamp, name: emoji });
   }
 
   async postThreadReply(channel: string, threadTs: string, text: string): Promise<void> {
-    await this.call("chat.postMessage", { channel, thread_ts: threadTs, text });
+    await this.call<SlackApiResponse>("chat.postMessage", { channel, thread_ts: threadTs, text });
   }
 }

@@ -26,3 +26,9 @@ export interface SlackConversationsRepliesResponse {
   messages?: Array<{ ts: string; text?: string; thread_ts?: string }>;
   error?: string;
 }
+
+/** Every Slack Web API method shares this response envelope. */
+export interface SlackApiResponse {
+  ok: boolean;
+  error?: string;
+}
