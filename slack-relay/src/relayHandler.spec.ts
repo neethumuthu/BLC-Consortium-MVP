@@ -87,6 +87,20 @@ describe("RelayHandler", () => {
     expect(slack.addReaction).toHaveBeenCalledWith(CHANNEL, "1700000010.000100", "white_check_mark");
   });
 
+  it("cleans Slack's escaped/mrkdwn text before posting it as a GitHub comment", async () => {
+    const outcome = await handler.handle(
+      buildEvent({
+        text: "docs &amp; spec look fine, thanks <@U99999> - see <https://example.com|the doc>",
+      }),
+    );
+
+    expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
+    expect(github.postIssueComment).toHaveBeenCalledWith(
+      "20",
+      "@claude docs & spec look fine, thanks @U99999 - see the doc (https://example.com)",
+    );
+  });
+
   it("ignores a redelivered event with the same event_id and does not relay twice", async () => {
     await handler.handle(buildEvent());
     github.postIssueComment.mockClear();

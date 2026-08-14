@@ -8,9 +8,13 @@
 - [x] 1.6 Implement two-layer dedup: in-memory `event_id`, disk-persisted per-thread relay record
 - [x] 1.7 Implement the GitHub comment relay (`@claude <reply text>`) and the Slack ✅ reaction
 - [x] 1.8 Wire it together in `main.ts` (Express app, raw-body capture for signature verification, `/slack/events` + `/healthz`)
-- [x] 1.9 Unit tests against synthetic payloads: valid reply, tampered/expired/missing signature, wrong user, edited-message subtype, single-link parent, multi-link parent with and without a disambiguating hint, duplicate `event_id`, already-relayed thread, no-issue-link parent — all passing (26/26)
+- [x] 1.9 Unit tests against synthetic payloads: valid reply, tampered/expired/missing signature, wrong user, edited-message subtype, single-link parent, multi-link parent with and without a disambiguating hint, duplicate `event_id`, already-relayed thread, no-issue-link parent — all passing (35/35, see 1.12)
 - [x] 1.10 Verify the production build compiles (`npm run build` → `dist/main.js`)
 - [x] 1.11 ~~Fix `ai-pr-review.yml`'s missing PR-vs-tracking-issue exclusion guard~~ — pulled out and landed directly on `main` instead, not as part of this change (bundling it here broke Ring 2 review of this PR entirely — GitHub Actions won't run a modified workflow file against the PR that changes it)
+- [x] 1.12 Ring 2 review findings, addressed:
+  - **[should-fix]** Slack HTML-escapes `&`/`<`/`>` and wraps links/mentions in its own markup (`<url|label>`, `<@U123>`, `<!here>`); relaying that verbatim would corrupt the GitHub comment and contradicted this change's own "posts the same comment a human would type" claim. Added `slackText.ts` (`slackTextToPlainText`) and applied it to the reply text before both disambiguation matching and the GitHub comment body. 9 new tests (`slackText.spec.ts` + one `relayHandler.spec.ts` regression test): 35/35 passing.
+  - **[nit]** `slack-relay/package.json`'s `lint` script referenced `eslint`, which isn't installed and has no config — same known gap `TESTING.md` already documents for `backend/`. Dropped the script rather than carrying a second copy of a known-broken command.
+  - **[nit]** general.md rule 6 (one atomic commit per task) not followed for tasks 1.1–1.10 — acknowledged, not restructured; matches existing precedent in this repo (e.g. the institution-detail-page PR) for not rewriting already-pushed history purely for retroactive commit-granularity tidiness.
 
 ## 2. Phase 1 — blocked on Dominik/workspace-admin
 

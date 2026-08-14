@@ -4,6 +4,7 @@ import { filterEvent } from "./eventFilter";
 import { GithubClient } from "./githubClient";
 import { resolveIssueNumber } from "./linkResolver";
 import { SlackClient } from "./slackClient";
+import { slackTextToPlainText } from "./slackText";
 import { SlackEventCallback } from "./types";
 
 const CHECKMARK_EMOJI = "white_check_mark";
@@ -34,7 +35,11 @@ export class RelayHandler {
       return { action: "ignored", reason: filterResult.reason };
     }
 
-    const { channel, thread_ts: threadTs, text: replyText = "" } = payload.event;
+    const { channel, thread_ts: threadTs, text: rawReplyText = "" } = payload.event;
+    // A human typing directly on GitHub types plain text - Slack's own
+    // escaped/mrkdwn representation must never leak into the relayed
+    // comment, or into the disambiguation match against it.
+    const replyText = slackTextToPlainText(rawReplyText);
 
     const existing = this.dedupe.alreadyRelayed(threadTs!);
     if (existing) {
