@@ -36,6 +36,10 @@
   - **[nit]** `claimedThreads` is never pruned after a successful relay - harmless today (explained why in a new comment in `dedupeStore.ts`), but documented as a known, accepted growth pattern for a long-running process rather than left unexplained.
   - **[nit]** `config.ts`'s `PORT` parsing had no validation, unlike every other field's `requireEnv`. Added `parsePort()`: defaults to 4000 if unset, throws the same clear error style as `requireEnv` on anything non-finite or ≤0, instead of a raw `RangeError` surfacing later out of `app.listen`.
   - 64/64 tests passing (9 suites, new `config.spec.ts`); `tsc --noEmit` and `npm run build` both clean.
+- [x] 1.18 Seventh Ring 2 review pass — clean, no should-fix requiring action in this PR:
+  - **[should-fix, explicitly scoped as "not this PR's job"]** `context/codebase/INTEGRATIONS.md`'s "no webhooks" claim and `STRUCTURE.md`'s missing mention of `slack-relay/` will read stale on merge. Per rule 7, context updates go through `context-gardener`, not this feature commit — `context-gardener.yml` reacts to merges to `main` automatically, so no manual follow-up action needed here beyond merging.
+  - **[nit]** No CI wiring runs `npm test`/`tsc --noEmit` for `slack-relay/` — matches existing precedent (`backend/`'s test also isn't CI-wired per `TESTING.md`), not a regression introduced by this change.
+  - No code changes this round - review found nothing actionable within this PR's scope.
 
 ## 2. Phase 1 — blocked on Dominik/workspace-admin
 
