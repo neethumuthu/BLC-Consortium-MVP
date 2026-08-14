@@ -23,6 +23,14 @@ interface RelayedThreadRecord {
  * both pass the check before either finishes. `claimThread`/`releaseClaim`
  * give callers the same synchronous check-and-set `isDuplicateEvent`
  * already uses for `event_id`, applied to `thread_ts` instead.
+ *
+ * `claimedThreads` is never pruned after a successful relay - harmless
+ * today, since `handle()` checks `alreadyRelayed` (persisted) before
+ * `claimThread` (in-memory), so a relayed thread's stale claim entry is
+ * never touched again either way. It does mean the set grows by one
+ * entry per successfully-relayed thread for the life of the process -
+ * fine for a single-PM, low-volume channel; revisit if this is ever
+ * expected to run for months without a restart.
  */
 export class DedupeStore {
   private readonly seenEventIds = new Set<string>();

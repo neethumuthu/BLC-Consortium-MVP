@@ -6,6 +6,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function parsePort(raw: string | undefined): number {
+  if (raw === undefined) {
+    return 4000;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid PORT environment variable: ${JSON.stringify(raw)}`);
+  }
+  return parsed;
+}
+
 export interface Config {
   port: number;
   slackSigningSecret: string;
@@ -19,7 +30,7 @@ export interface Config {
 
 export function loadConfig(): Config {
   return {
-    port: Number(process.env.PORT ?? 4000),
+    port: parsePort(process.env.PORT),
     slackSigningSecret: requireEnv("SLACK_SIGNING_SECRET"),
     slackBotToken: requireEnv("SLACK_BOT_TOKEN"),
     pmSlackMemberId: requireEnv("PM_SLACK_MEMBER_ID"),
