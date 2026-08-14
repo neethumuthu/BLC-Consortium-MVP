@@ -6,20 +6,8 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function parsePort(raw: string | undefined): number {
-  if (raw === undefined) {
-    return 4000;
-  }
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`Invalid PORT environment variable: ${JSON.stringify(raw)}`);
-  }
-  return parsed;
-}
-
 export interface Config {
-  port: number;
-  slackSigningSecret: string;
+  slackAppToken: string;
   slackBotToken: string;
   pmSlackMemberId: string;
   githubToken: string;
@@ -30,8 +18,12 @@ export interface Config {
 
 export function loadConfig(): Config {
   return {
-    port: parsePort(process.env.PORT),
-    slackSigningSecret: requireEnv("SLACK_SIGNING_SECRET"),
+    // App-Level Token (xapp-...), connections:write scope - authenticates
+    // the outbound WebSocket connection itself. No SLACK_SIGNING_SECRET or
+    // PORT anymore - there's no inbound HTTP server left to verify
+    // requests against or bind a port for (Socket Mode is an outbound
+    // connection from this service to Slack, not the reverse).
+    slackAppToken: requireEnv("SLACK_APP_TOKEN"),
     slackBotToken: requireEnv("SLACK_BOT_TOKEN"),
     pmSlackMemberId: requireEnv("PM_SLACK_MEMBER_ID"),
     githubToken: requireEnv("SLACK_RELAY_GH_PAT"),

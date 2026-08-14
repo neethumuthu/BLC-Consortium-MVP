@@ -1,7 +1,7 @@
 import { loadConfig } from "./config";
 
 const REQUIRED_ENV = {
-  SLACK_SIGNING_SECRET: "sig",
+  SLACK_APP_TOKEN: "xapp-fake",
   SLACK_BOT_TOKEN: "xoxb-fake",
   PM_SLACK_MEMBER_ID: "U123",
   SLACK_RELAY_GH_PAT: "ghp_fake",
@@ -14,34 +14,41 @@ describe("loadConfig", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv, ...REQUIRED_ENV };
-    delete process.env.PORT;
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  it("defaults PORT to 4000 when unset", () => {
-    expect(loadConfig().port).toBe(4000);
+  it("loads a complete config when every required variable is set", () => {
+    expect(loadConfig()).toEqual({
+      slackAppToken: "xapp-fake",
+      slackBotToken: "xoxb-fake",
+      pmSlackMemberId: "U123",
+      githubToken: "ghp_fake",
+      githubOwner: "neethumuthu",
+      githubRepo: "BLC-Consortium-MVP",
+      relayedStorePath: "./relayed-threads.json",
+    });
   });
 
-  it("uses a valid PORT from the environment", () => {
-    process.env.PORT = "5000";
-    expect(loadConfig().port).toBe(5000);
+  it("uses RELAYED_STORE_PATH from the environment when set", () => {
+    process.env.RELAYED_STORE_PATH = "/var/lib/blc-slack-relay/relayed.json";
+    expect(loadConfig().relayedStorePath).toBe("/var/lib/blc-slack-relay/relayed.json");
   });
 
-  it("throws a clear error on a malformed PORT instead of a raw RangeError from app.listen", () => {
-    process.env.PORT = "not-a-number";
-    expect(() => loadConfig()).toThrow("Invalid PORT environment variable");
+  it("throws when the App-Level Token is missing", () => {
+    delete process.env.SLACK_APP_TOKEN;
+    expect(() => loadConfig()).toThrow("SLACK_APP_TOKEN");
   });
 
-  it("throws on a zero or negative PORT", () => {
-    process.env.PORT = "0";
-    expect(() => loadConfig()).toThrow("Invalid PORT environment variable");
+  it("throws when the bot token is missing", () => {
+    delete process.env.SLACK_BOT_TOKEN;
+    expect(() => loadConfig()).toThrow("SLACK_BOT_TOKEN");
   });
 
-  it("throws when a required variable is missing", () => {
-    delete process.env.SLACK_SIGNING_SECRET;
-    expect(() => loadConfig()).toThrow("SLACK_SIGNING_SECRET");
+  it("throws when the GitHub PAT is missing", () => {
+    delete process.env.SLACK_RELAY_GH_PAT;
+    expect(() => loadConfig()).toThrow("SLACK_RELAY_GH_PAT");
   });
 });

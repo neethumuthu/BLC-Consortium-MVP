@@ -24,8 +24,7 @@ const MULTI_LINK_PARENT = [
 
 function buildConfig(storePath: string): Config {
   return {
-    port: 4000,
-    slackSigningSecret: "unused-in-this-test",
+    slackAppToken: "xapp-fake",
     slackBotToken: "xoxb-fake",
     pmSlackMemberId: PM_ID,
     githubToken: "ghp_fake",

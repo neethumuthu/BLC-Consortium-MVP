@@ -37,6 +37,21 @@ posts the same `@claude <answer>` comment a human would already type.
   bundling it here would have meant this PR could never get a real Ring 2
   review of the actual relay code. See `docs/BUILD_LOG.md` for that fix.
 
+**Transport pivot, mid-Phase-1 (2026-08-14):** the relay was originally
+built (Phase 0, PR #20) as an HTTP-webhook receiver — Express, HMAC
+signature verification, a public Request URL routed through Caddy. While
+starting Phase 1, checking the Slack App's own Event Subscriptions page
+found **Socket Mode already enabled** on "AI SDLC Pipeline Bot." Switched
+to it rather than turning it off: no public endpoint, no Caddy/NSG change,
+better security posture, and it's already the app's actual configured
+state. `app.ts`/`signature.ts` (and their tests) were removed; a new
+`socketReceiver.ts` wraps `@slack/socket-mode`'s `SocketModeClient` and
+hands events to the same, otherwise-unmodified `RelayHandler` — the entire
+business-logic layer (dedupe, link disambiguation, Slack-markup cleanup,
+GitHub posting) is transport-agnostic and untouched. Full rationale and the
+exact package API (verified against the installed package's own source,
+not just docs) is in `design.md`.
+
 ## Capabilities
 
 ### New Capabilities
@@ -56,11 +71,13 @@ domain the existing specs describe.
 ## Impact
 
 - New: `slack-relay/` (TypeScript service, own `package.json`).
-- New (VM-only, not committed): systemd unit `blc-slack-relay`, a Caddy
-  `handle /slack/events*` block, a `.env` with the bot token/signing
-  secret/`SLACK_RELAY_GH_PAT`.
+- New (VM-only, not committed): systemd unit `blc-slack-relay` (created
+  2026-08-14, disabled pending credentials), a `.env` with the app
+  token/bot token/`SLACK_RELAY_GH_PAT`.
 - No change to `requirements-nudge.yml` or `proposal-answer-sync.yml`.
 - `.github/workflows/ai-pr-review.yml`'s guard fix landed separately,
   directly on `main`, not as part of this change (see "What Changes").
-- No new NSG rule, no new DNS — reached through the existing Caddy
-  site/cert on port 443.
+- **No Caddy change, no NSG change, no new DNS, no public port at all** —
+  Socket Mode is an outbound connection from the relay to Slack, not an
+  inbound one. The originally-planned Caddyfile edit is dropped entirely,
+  not deferred.

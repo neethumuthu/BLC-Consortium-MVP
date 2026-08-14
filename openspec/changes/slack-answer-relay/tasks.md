@@ -41,23 +41,43 @@
   - **[nit]** No CI wiring runs `npm test`/`tsc --noEmit` for `slack-relay/` — matches existing precedent (`backend/`'s test also isn't CI-wired per `TESTING.md`), not a regression introduced by this change.
   - No code changes this round - review found nothing actionable within this PR's scope.
 
-## 2. Phase 1 — blocked on Dominik/workspace-admin
+## 2. Phase 0.5 — transport pivot to Socket Mode (2026-08-14, own PR)
 
-- [ ] 2.1 Enable Events API on the existing Slack App, add Bot User with `channels:history`/`chat:write` scopes
-- [ ] 2.2 Capture the bot token and signing secret
-- [ ] 2.3 Invite the bot into the destination Slack channel (required for event delivery at all)
+While starting Phase 1, found Socket Mode already enabled on the Slack
+App. Reworked the transport layer rather than turning it off — see
+`proposal.md`/`design.md` for the full rationale and the exact,
+source-verified `@slack/socket-mode` API.
 
-## 3. Phase 2 — deploy
+- [x] 2.1 Verify the exact `SocketModeClient` event-body shape against the installed package's own runtime source (`node_modules/@slack/socket-mode/dist/src/SocketModeClient.js`), not just docs prose — confirmed `body` is the full `event_callback` payload, byte-for-byte reusable by the existing `RelayHandler.handle()`
+- [x] 2.2 Install `@slack/socket-mode`; remove `express`/`supertest` and their `@types/*`
+- [x] 2.3 Remove `app.ts`/`app.spec.ts`/`signature.ts`/`signature.spec.ts` (HTTP receiver + HMAC verification, no longer applicable)
+- [x] 2.4 Add `socketReceiver.ts` (`connectSocketMode`, `handleSocketMessage` — small and directly unit-testable, matching how `app.ts`'s routes were tested) + `socketReceiver.spec.ts`
+- [x] 2.5 Update `config.ts` (drop `slackSigningSecret`/`port`, add `slackAppToken`) + `config.spec.ts`
+- [x] 2.6 Rewrite `main.ts` to wire `connectSocketMode` + `socketClient.start()` instead of the Express app
+- [x] 2.7 Update `.env.example` (`SLACK_APP_TOKEN` instead of `SLACK_SIGNING_SECRET`/`PORT`)
+- [x] 2.8 Confirm every pre-existing business-logic test suite (`relayHandler`, `dedupeStore`, `linkResolver`, `slackText`, `slackClient`, `eventFilter`) passes unmodified — only their `Config` fixture needed updating, no logic changes
+- [x] 2.9 Full verification: `tsc --noEmit` clean, `npm run build` clean, 58/58 tests passing (8 suites)
+- [x] 2.10 Update `proposal.md`/`design.md` to record the pivot, the verified API, and why (before this tasks.md entry)
 
-- [x] 3.0 Pull the merged code onto the staging VM (`783b72c` → `82a1627`), `npm install` + `npm run build`, confirmed `dist/main.js` exists
-- [x] 3.1 Create `blc-slack-relay.service` on the staging VM (template already pulled and verified in `design.md`) - created and `daemon-reload`'d, deliberately left **disabled/inactive** since `.env` (3.3) doesn't exist yet and the service would just fail to start
-- [ ] 3.2 Add the `handle /slack/events*` block to the existing Caddyfile, reload Caddy - held until 3.4, no point routing to a port nothing listens on yet
-- [ ] 3.3 Write the relay's `.env` (bot token, signing secret, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`) - blocked on Phase 1 (2.1/2.2)
-- [ ] 3.4 Enable and start the service; confirm Slack's Request URL verification succeeds against it
+## 3. Phase 1 — Neethu has edit access, not blocked on Dominik
 
-## 4. Phase 3 — live end-to-end verification
+- [ ] 3.1 Add `channels:history`/`chat:write` Bot Token scopes to the Slack App
+- [ ] 3.2 Subscribe to `message.channels` bot events
+- [ ] 3.3 Generate the App-Level Token (`connections:write` scope) — new credential, not in the original Phase 1 plan
+- [ ] 3.4 Capture the bot token
+- [ ] 3.5 Invite the bot into the destination Slack channel (required for event delivery at all)
 
-- [ ] 4.1 A real threaded reply from the PM's actual Slack account lands as a `@claude <answer>` comment on the correct GitHub issue
-- [ ] 4.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR
-- [ ] 4.3 The ✅ reaction appears on the PM's Slack message
-- [ ] 4.4 Log the completed deployment in `docs/BUILD_LOG.md`, matching the existing Phase 15/16/17/18 convention
+## 4. Phase 2 — deploy
+
+- [x] 4.0 Pull the merged code onto the staging VM (`783b72c` → `82a1627`), `npm install` + `npm run build`, confirmed `dist/main.js` exists
+- [x] 4.1 Create `blc-slack-relay.service` on the staging VM (template already pulled and verified in `design.md`) - created and `daemon-reload`'d, deliberately left **disabled/inactive** since `.env` (4.3) doesn't exist yet and the service would just fail to start
+- [x] 4.2 ~~Add the `handle /slack/events*` block to the existing Caddyfile~~ — dropped entirely, not deferred: Socket Mode needs no inbound route at all
+- [ ] 4.3 Pull this change's rework onto the VM, rebuild; write the relay's `.env` (app token, bot token, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`) - blocked on Phase 1 (3.3/3.4)
+- [ ] 4.4 Enable and start the service; confirm it connects (no Request URL verification needed anymore — just confirm the WebSocket connects and stays connected)
+
+## 5. Phase 3 — live end-to-end verification
+
+- [ ] 5.1 A real threaded reply from the PM's actual Slack account lands as a `@claude <answer>` comment on the correct GitHub issue
+- [ ] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR
+- [ ] 5.3 The ✅ reaction appears on the PM's Slack message
+- [ ] 5.4 Log the completed deployment in `docs/BUILD_LOG.md`, matching the existing Phase 15/16/17/18 convention
