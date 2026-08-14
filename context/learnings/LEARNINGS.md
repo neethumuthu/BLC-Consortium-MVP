@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-13
+last_verified: 2026-08-14
 source: compound loop
 confidence: high
 owner: context steward (rotating)
@@ -10,6 +10,39 @@ owner: context steward (rotating)
 <!-- Newest first. Entry format below. When a learning hardens into a permanent rule,
      move it to rules/ or CONVENTIONS.md and replace the body with a link.
      Prune quarterly: anything not referenced in 6 months gets archived. -->
+
+## 2026-08-13 — Spec/context edits keep landing bundled with the feature commit that motivated them, despite rules 5/7 already existing
+
+- **Symptom:** PR #18's first commit (`5177ce7`) bundled three unrelated
+  things together: a `confidence: low → high` bump to two `openspec/specs/`
+  files, a brand-new frontend capability (the institution detail page)
+  shipped with no change-id at all, and (in a second commit) an unrelated
+  `DOMAIN.md` formatting fix. Ring 2 review flagged this as a `[blocker]`
+  for violating `general.md` rules 5 ("no code without a change-id") and 7
+  ("context and spec updates go through PRs — never edit `context/` or
+  `openspec/specs/` as a side effect of a feature commit"). This is the
+  second time this exact rule pair has been violated: the first was
+  `certificate-lifecycle/spec.md` landing via a direct push straight to
+  `main` rather than its own PR (`docs/BUILD_LOG.md`'s Stage D5 entry),
+  corrected the next time around by routing `institution-directory/spec.md`
+  through its own PR (#12) instead.
+- **Root cause:** rules 5/7 are enforced only by Ring 2's after-the-fact
+  review, not by anything that runs before a commit is made. At authoring
+  time, a spec/context touch motivated by the feature work in front of you
+  feels like part of the same task, so it lands in the same commit unless
+  the author deliberately stops to split it first.
+- **Rule adopted:** before opening a PR, check whether any single commit
+  touches both `openspec/specs/`/`context/` and application code; if so,
+  split it before pushing rather than relying on Ring 2 to catch it after
+  the fact. If it's already been pushed and splitting would require a
+  force-push, don't rewrite shared history — fix it with a retroactive,
+  explicitly-labeled change-id (`skip_specs: true` if the underlying
+  requirement itself didn't change) plus a plain `docs/BUILD_LOG.md` note
+  describing what happened, matching the precedent this PR itself set.
+- **Origin:** PR #18 Ring 2 review (`[blocker]`), self-fixed the same day
+  via `df3097d`; first occurrence documented in `docs/BUILD_LOG.md`'s
+  Stage D5 follow-up entry (`certificate-lifecycle/spec.md` direct push,
+  corrected via PR #12's `institution-directory` stub).
 
 ## 2026-08-13 — Fixing one stale context claim leaves its siblings stale unless the fix greps for the claim, not just the file that prompted it `[graduated → rules/general.md#process, rule 11]`
 
