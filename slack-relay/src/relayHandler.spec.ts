@@ -87,6 +87,33 @@ describe("RelayHandler", () => {
     expect(slack.addReaction).toHaveBeenCalledWith(CHANNEL, "1700000010.000100", "white_check_mark");
   });
 
+  it("notifies the PM in-thread and does not mark the thread relayed when the GitHub post fails", async () => {
+    github.postIssueComment.mockRejectedValue(new Error("503 Service Unavailable"));
+
+    const outcome = await handler.handle(buildEvent());
+
+    expect(outcome).toEqual({
+      action: "relay_failed",
+      issueNumber: "20",
+      error: "503 Service Unavailable",
+    });
+    expect(slack.postThreadReply).toHaveBeenCalledWith(
+      CHANNEL,
+      "1700000000.000000",
+      expect.stringContaining("#20"),
+    );
+    expect(slack.addReaction).not.toHaveBeenCalled();
+
+    // A retry (e.g. Slack redelivering, or the PM replying again) must
+    // still be able to succeed - the failed attempt must not have been
+    // recorded as relayed.
+    github.postIssueComment.mockResolvedValue(undefined);
+    const retryEvent = buildEvent({ text: "retrying" });
+    retryEvent.event_id = "Ev002";
+    const retryOutcome = await handler.handle(retryEvent);
+    expect(retryOutcome).toEqual({ action: "relayed", issueNumber: "20" });
+  });
+
   it("cleans Slack's escaped/mrkdwn text before posting it as a GitHub comment", async () => {
     const outcome = await handler.handle(
       buildEvent({

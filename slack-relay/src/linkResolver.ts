@@ -1,5 +1,21 @@
-const ISSUE_LINK_RE = /github\.com\/[^/\s]+\/[^/\s]+\/issues\/(\d+)/gi;
 const EXPLICIT_ISSUE_MENTION_RE = /#(\d+)\b/g;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Scoped to exactly this configured repo, not any GitHub issue link - a
+ * stray cross-repo reference in the thread (someone pasting an unrelated
+ * link) must never become a disambiguation candidate that ends up
+ * resolving to the wrong issue number in *this* repo.
+ */
+function issueLinkPattern(owner: string, repo: string): RegExp {
+  return new RegExp(
+    `github\\.com/${escapeRegExp(owner)}/${escapeRegExp(repo)}/issues/(\\d+)`,
+    "gi",
+  );
+}
 
 // Words too common to count as a distinctive disambiguation signal.
 const STOPWORDS = new Set([
@@ -27,10 +43,11 @@ export type ResolveResult =
   | { status: "none" }
   | { status: "ambiguous"; candidates: string[] };
 
-function extractCandidates(parentText: string): Candidate[] {
+function extractCandidates(parentText: string, owner: string, repo: string): Candidate[] {
+  const issueLinkRe = issueLinkPattern(owner, repo);
   const seen = new Map<string, string>();
   for (const line of parentText.split("\n")) {
-    const matches = line.matchAll(ISSUE_LINK_RE);
+    const matches = line.matchAll(issueLinkRe);
     for (const match of matches) {
       const issueNumber = match[1];
       if (!seen.has(issueNumber)) {
@@ -61,8 +78,13 @@ function distinctiveWords(line: string): string[] {
  * in the reply, then a distinctive-word overlap with each candidate's own
  * line, and refuses to guess if that still leaves more than one candidate.
  */
-export function resolveIssueNumber(parentText: string, replyText: string): ResolveResult {
-  const candidates = extractCandidates(parentText);
+export function resolveIssueNumber(
+  parentText: string,
+  replyText: string,
+  owner: string,
+  repo: string,
+): ResolveResult {
+  const candidates = extractCandidates(parentText, owner, repo);
 
   if (candidates.length === 0) {
     return { status: "none" };

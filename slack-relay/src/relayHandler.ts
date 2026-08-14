@@ -15,7 +15,8 @@ export type RelayOutcome =
   | { action: "already_relayed"; issueNumber: string }
   | { action: "no_issue_link_found" }
   | { action: "ambiguous"; candidates: string[] }
-  | { action: "relayed"; issueNumber: string };
+  | { action: "relayed"; issueNumber: string }
+  | { action: "relay_failed"; issueNumber: string; error: string };
 
 export class RelayHandler {
   constructor(
@@ -52,7 +53,12 @@ export class RelayHandler {
     }
 
     const parentText = await this.slack.fetchThreadParentText(channel, threadTs!);
-    const resolution = resolveIssueNumber(parentText, replyText);
+    const resolution = resolveIssueNumber(
+      parentText,
+      replyText,
+      this.config.githubOwner,
+      this.config.githubRepo,
+    );
 
     if (resolution.status === "none") {
       await this.slack.postThreadReply(
@@ -73,7 +79,23 @@ export class RelayHandler {
       return { action: "ambiguous", candidates: resolution.candidates };
     }
 
-    await this.github.postIssueComment(resolution.issueNumber, `@claude ${replyText}`);
+    try {
+      await this.github.postIssueComment(resolution.issueNumber, `@claude ${replyText}`);
+    } catch (error) {
+      // The PM must know their answer did NOT make it to GitHub - silence
+      // here would contradict the whole point of this relay (reliably
+      // producing the comment a human would type). Deliberately not
+      // recorded in the dedupe store, so a retry (theirs or Slack's) can
+      // still succeed.
+      const message = error instanceof Error ? error.message : String(error);
+      await this.slack.postThreadReply(
+        channel,
+        threadTs!,
+        `Couldn't relay this to GitHub issue #${resolution.issueNumber} (${message}) - please answer directly on the issue instead.`,
+      );
+      return { action: "relay_failed", issueNumber: resolution.issueNumber, error: message };
+    }
+
     this.dedupe.recordRelayed(threadTs!, resolution.issueNumber, new Date().toISOString());
     await this.slack.addReaction(channel, payload.event.ts, CHECKMARK_EMOJI);
 

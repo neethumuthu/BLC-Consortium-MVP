@@ -29,10 +29,13 @@
      fragment in an already-relayed thread gets an "already relayed"
      notice instead of opening a second PR).
    - On success: `POST /repos/{owner}/{repo}/issues/{number}/comments`
-     with body `@claude <the PM's raw reply text>`, using a dedicated
-     fine-grained PAT scoped to this one repo, Issues read/write only.
-     Stored only in the relay's own `.env` on the VM, never a GitHub
-     Actions secret (nothing in Actions consumes it).
+     with body `@claude <the PM's reply text>`, run through
+     `slackTextToPlainText()` first — Slack HTML-escapes `&`/`<`/`>` and
+     wraps links/mentions in its own markup, which must never leak into
+     the relayed comment (Ring 2 finding on PR #20, fixed). Posted via a
+     dedicated fine-grained PAT scoped to this one repo, Issues read/write
+     only. Stored only in the relay's own `.env` on the VM, never a
+     GitHub Actions secret (nothing in Actions consumes it).
    - On success, `reactions.add` a ✅ on the PM's message.
 
 ### Why a new PAT, not `DISPATCH_TOKEN`
