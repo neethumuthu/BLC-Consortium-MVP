@@ -4,6 +4,7 @@ const REQUIRED_ENV = {
   SLACK_APP_TOKEN: "xapp-fake",
   SLACK_BOT_TOKEN: "xoxb-fake",
   PM_SLACK_MEMBER_ID: "U123",
+  PM_DISPLAY_NAME: "Dominik",
   SLACK_RELAY_GH_PAT: "ghp_fake",
   GITHUB_OWNER: "neethumuthu",
   GITHUB_REPO: "BLC-Consortium-MVP",
@@ -25,6 +26,7 @@ describe("loadConfig", () => {
       slackAppToken: "xapp-fake",
       slackBotToken: "xoxb-fake",
       pmSlackMemberId: "U123",
+      pmDisplayName: "Dominik",
       githubToken: "ghp_fake",
       githubOwner: "neethumuthu",
       githubRepo: "BLC-Consortium-MVP",
@@ -50,5 +52,10 @@ describe("loadConfig", () => {
   it("throws when the GitHub PAT is missing", () => {
     delete process.env.SLACK_RELAY_GH_PAT;
     expect(() => loadConfig()).toThrow("SLACK_RELAY_GH_PAT");
+  });
+
+  it("throws when the PM display name is missing", () => {
+    delete process.env.PM_DISPLAY_NAME;
+    expect(() => loadConfig()).toThrow("PM_DISPLAY_NAME");
   });
 });

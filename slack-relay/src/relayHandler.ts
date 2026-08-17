@@ -138,7 +138,10 @@ export class RelayHandler {
     }
 
     try {
-      await this.github.postIssueComment(resolution.issueNumber, `@claude ${replyText}`);
+      await this.github.postIssueComment(
+        resolution.issueNumber,
+        `@claude Relayed from ${this.config.pmDisplayName}'s Slack reply: ${replyText}`,
+      );
     } catch (error) {
       // The PM must know their answer did NOT make it to GitHub - silence
       // here would contradict the whole point of this relay (reliably
