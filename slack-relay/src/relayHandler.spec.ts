@@ -64,7 +64,7 @@ describe("RelayHandler", () => {
     dedupe = new DedupeStore(config.relayedStorePath);
 
     slack = {
-      fetchThreadParentText: jest.fn().mockResolvedValue(SINGLE_LINK_PARENT),
+      fetchThreadParent: jest.fn().mockResolvedValue({ text: SINGLE_LINK_PARENT, isFromBot: true }),
       addReaction: jest.fn().mockResolvedValue(undefined),
       postThreadReply: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<SlackClient>;
@@ -116,7 +116,7 @@ describe("RelayHandler", () => {
   });
 
   it("releases the claim and notifies the PM when looking up the thread's parent message fails", async () => {
-    slack.fetchThreadParentText.mockRejectedValueOnce(new Error("conversations.replies failed"));
+    slack.fetchThreadParent.mockRejectedValueOnce(new Error("conversations.replies failed"));
 
     const outcome = await handler.handle(buildEvent());
 
@@ -141,7 +141,7 @@ describe("RelayHandler", () => {
 
   it("does not crash and still returns the real outcome when even the best-effort Slack notice fails", async () => {
     const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
-    slack.fetchThreadParentText.mockRejectedValueOnce(new Error("lookup failed"));
+    slack.fetchThreadParent.mockRejectedValueOnce(new Error("lookup failed"));
     slack.postThreadReply.mockRejectedValueOnce(new Error("chat.postMessage also failed"));
 
     const outcome = await handler.handle(buildEvent());
@@ -199,7 +199,7 @@ describe("RelayHandler", () => {
     second.event_id = "Ev002";
 
     // Not awaited between calls, so both run synchronously up to their
-    // first await (fetchThreadParentText) before either resolves -
+    // first await (fetchThreadParent) before either resolves -
     // genuinely exercising the interleaving the claim exists to close.
     const [outcome1, outcome2] = await Promise.all([
       handler.handle(first),
@@ -213,7 +213,7 @@ describe("RelayHandler", () => {
   });
 
   it("releases the claim on a no-issue-link outcome, so a genuine follow-up reply can still relay", async () => {
-    slack.fetchThreadParentText.mockResolvedValueOnce("no links in here at all");
+    slack.fetchThreadParent.mockResolvedValueOnce({ text: "no links in here at all", isFromBot: true });
 
     const first = await handler.handle(buildEvent({ text: "sure" }));
     expect(first).toEqual({ action: "no_issue_link_found" });
@@ -222,6 +222,30 @@ describe("RelayHandler", () => {
     followUp.event_id = "Ev002";
     const second = await handler.handle(followUp);
     expect(second).toEqual({ action: "relayed", issueNumber: "20" });
+  });
+
+  it("silently ignores a threaded reply when the thread wasn't started by the bot - real 2026-08-17 finding: the PM's team replies in-thread on everything, not just this bot's nudges, and a visible 'couldn't find a linked issue' notice on every ordinary conversation would be unusable noise", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    slack.fetchThreadParent.mockResolvedValueOnce({ text: "just a normal team conversation", isFromBot: false });
+
+    const outcome = await handler.handle(buildEvent());
+
+    expect(outcome).toEqual({ action: "not_a_bot_thread" });
+    expect(github.postIssueComment).not.toHaveBeenCalled();
+    // The whole point of this outcome is silence - unlike every other
+    // non-relay outcome, no notice gets posted back into the thread.
+    expect(slack.postThreadReply).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+
+    // The claim must still be released - a later reply in a thread the
+    // bot genuinely did start must not be blocked by this one.
+    slack.fetchThreadParent.mockResolvedValueOnce({ text: SINGLE_LINK_PARENT, isFromBot: true });
+    const followUp = buildEvent({ text: "for real this time" });
+    followUp.event_id = "Ev002";
+    const followUpOutcome = await handler.handle(followUp);
+    expect(followUpOutcome).toEqual({ action: "relayed", issueNumber: "20" });
   });
 
   it("cleans Slack's escaped/mrkdwn text before posting it as a GitHub comment", async () => {
@@ -274,7 +298,7 @@ describe("RelayHandler", () => {
   });
 
   it("asks for clarification and does not relay when the thread links no GitHub issue", async () => {
-    slack.fetchThreadParentText.mockResolvedValue("no links in here at all");
+    slack.fetchThreadParent.mockResolvedValue({ text: "no links in here at all", isFromBot: true });
 
     const outcome = await handler.handle(buildEvent());
 
@@ -284,7 +308,7 @@ describe("RelayHandler", () => {
   });
 
   it("asks for clarification and does not relay when the thread links multiple issues ambiguously", async () => {
-    slack.fetchThreadParentText.mockResolvedValue(MULTI_LINK_PARENT);
+    slack.fetchThreadParent.mockResolvedValue({ text: MULTI_LINK_PARENT, isFromBot: true });
 
     const outcome = await handler.handle(buildEvent({ text: "let's go with option 1 for both" }));
 

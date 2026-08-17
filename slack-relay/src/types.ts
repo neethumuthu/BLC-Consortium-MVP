@@ -23,7 +23,7 @@ export type SlackEventPayload = SlackEventCallback | SlackUrlVerification;
 
 export interface SlackConversationsRepliesResponse {
   ok: boolean;
-  messages?: Array<{ ts: string; text?: string; thread_ts?: string }>;
+  messages?: Array<{ ts: string; text?: string; thread_ts?: string; bot_id?: string }>;
   error?: string;
 }
 
