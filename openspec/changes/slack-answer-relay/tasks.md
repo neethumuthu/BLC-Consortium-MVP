@@ -61,21 +61,28 @@ source-verified `@slack/socket-mode` API.
 
 ## 3. Phase 1 — Neethu has edit access, not blocked on Dominik
 
-- [ ] 3.1 Add `channels:history`/`chat:write` Bot Token scopes to the Slack App
-- [ ] 3.2 Subscribe to `message.channels` bot events
-- [ ] 3.3 Generate the App-Level Token (`connections:write` scope) — new credential, not in the original Phase 1 plan
-- [ ] 3.4 Capture the bot token
-- [ ] 3.5 Invite the bot into the destination Slack channel (required for event delivery at all)
+- [x] 3.1 Add `channels:history`/`chat:write` Bot Token scopes to the Slack App
+- [x] 3.2 Subscribe to `message.channels` bot events
+- [x] 3.3 Generate the App-Level Token (`connections:write` scope) — new credential, not in the original Phase 1 plan
+- [x] 3.4 Capture the bot token
+- [x] 3.5 Invite the bot into the destination Slack channel (required for event delivery at all)
+- [x] 3.6 **Added 2026-08-17, not in the original plan:** `team_blockchain` turned out to be a **private** channel — `channels:history`/`message.channels` only cover public channels. Had to separately add `groups:history` scope + `message.groups` event subscription, and (a distinct, second gap) actually invite the bot user as a channel **member** — it could already post there via the older incoming-webhook mechanism, which does not require bot membership, so this was missed on the first pass. Both fixed live.
 
 ## 4. Phase 2 — deploy
 
 - [x] 4.0 Pull the merged code onto the staging VM (`783b72c` → `82a1627`), `npm install` + `npm run build`, confirmed `dist/main.js` exists
 - [x] 4.1 Create `blc-slack-relay.service` on the staging VM (template already pulled and verified in `design.md`) - created and `daemon-reload`'d, deliberately left **disabled/inactive** since `.env` (4.3) doesn't exist yet and the service would just fail to start
 - [x] 4.2 ~~Add the `handle /slack/events*` block to the existing Caddyfile~~ — dropped entirely, not deferred: Socket Mode needs no inbound route at all
-- [ ] 4.3 Pull this change's rework onto the VM, rebuild; write the relay's `.env` (app token, bot token, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`) - blocked on Phase 1 (3.3/3.4)
-- [ ] 4.4 Enable and start the service; confirm it connects (no Request URL verification needed anymore — just confirm the WebSocket connects and stays connected)
+- [x] 4.3 Pull this change's rework onto the VM, rebuild; write the relay's `.env` (app token, bot token, `SLACK_RELAY_GH_PAT`, `PM_SLACK_MEMBER_ID`, `GITHUB_OWNER`/`GITHUB_REPO`) — done 2026-08-14
+- [x] 4.4 Enable and start the service; confirm it connects — done 2026-08-14, confirmed running continuously since
 
 ## 5. Phase 3 — live end-to-end verification
+
+**Status as of 2026-08-17: still blocked, real progress made.** First live attempts (4 real threaded replies from Dominik across the day) surfaced two separate, real bugs, neither catchable without an actual live attempt:
+1. The Phase 1 gaps in 3.6 above (private channel scope + bot membership) — the first 3 replies were never received by the relay at all, confirmed via `journalctl` showing zero log activity across all three.
+2. Once 3.6 was fixed and a 4th reply was received: `SlackClient.fetchThreadParentText` called `conversations.replies` via a JSON POST body — confirmed live that this specific Slack API method rejects that (`invalid_arguments`, "missing required field" for every field even though sent), unlike `chat.postMessage`/`reactions.add` which do accept JSON. This is why it surfaced as a thread-lookup failure rather than an auth error — the relay's own JSON-based fallback notice posted successfully, masking the real cause. Fixed in a dedicated PR, not yet deployed to the VM as of this writing.
+
+**Not yet re-attempted with the fix live** — needs redeploying to the VM, then one more real reply from Dominik.
 
 - [ ] 5.1 A real threaded reply from the PM's actual Slack account lands as a `@claude <answer>` comment on the correct GitHub issue
 - [ ] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR

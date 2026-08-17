@@ -12,6 +12,25 @@ export class SlackClient {
    * so every caller (fetchThreadParentText, addReaction, postThreadReply)
    * gets this for free instead of failing silently.
    */
+  /**
+   * Every Slack Web API method shares the same `{ok, error}` envelope,
+   * including on HTTP 200 - a scope/auth/rate-limit failure (e.g. the bot
+   * not yet invited to the channel, per Phase 1's own task 2.3) never
+   * shows up as a thrown fetch error or a non-2xx status, only as
+   * `ok: false` in an otherwise-successful response. Shared by both
+   * transport methods below so every caller gets this for free.
+   */
+  private async parseSlackResponse<T extends SlackApiResponse>(
+    response: Response,
+    method: string,
+  ): Promise<T> {
+    const result = (await response.json()) as T;
+    if (!result.ok) {
+      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
+    }
+    return result;
+  }
+
   private async call<T extends SlackApiResponse>(
     method: string,
     body: Record<string, unknown>,
@@ -24,11 +43,29 @@ export class SlackClient {
       },
       body: JSON.stringify(body),
     });
-    const result = (await response.json()) as T;
-    if (!result.ok) {
-      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
-    }
-    return result;
+    return this.parseSlackResponse<T>(response, method);
+  }
+
+  /**
+   * Some Slack Web API methods - conversations.replies confirmed live,
+   * 2026-08-17 - do not accept a JSON POST body at all (returns
+   * `invalid_arguments`, "missing required field" for every field, even
+   * though they were sent) - they need query-string parameters instead.
+   * chat.postMessage/reactions.add do accept JSON, which is why only this
+   * one call needed its own method rather than fixing `call()` itself.
+   */
+  private async callWithQueryParams<T extends SlackApiResponse>(
+    method: string,
+    params: Record<string, string | number>,
+  ): Promise<T> {
+    const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+    const response = await fetch(`https://slack.com/api/${method}?${query.toString()}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.botToken}`,
+      },
+    });
+    return this.parseSlackResponse<T>(response, method);
   }
 
   /**
@@ -38,11 +75,10 @@ export class SlackClient {
    * for its own message content.
    */
   async fetchThreadParentText(channel: string, threadTs: string): Promise<string> {
-    const result = await this.call<SlackConversationsRepliesResponse>("conversations.replies", {
-      channel,
-      ts: threadTs,
-      limit: 1,
-    });
+    const result = await this.callWithQueryParams<SlackConversationsRepliesResponse>(
+      "conversations.replies",
+      { channel, ts: threadTs, limit: 1 },
+    );
     if (!result.messages || result.messages.length === 0) {
       throw new Error("conversations.replies returned no messages for this thread");
     }
