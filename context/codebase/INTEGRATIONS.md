@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-13
+last_verified: 2026-08-17
 source: code-derived
 confidence: medium
 owner: tech lead
@@ -18,9 +18,25 @@ owner: tech lead
 | Backend HTTP API auth | Every backend route requires a shared-secret bearer token | `backend/src/common/guards/api-key.guard.ts` (`ApiKeyGuard`), applied globally in `backend/src/main.ts` via `app.useGlobalGuards` | N/A (single shared secret per org, no key rotation/scopes observed) | Simple exact-string comparison of `Authorization: Bearer <API_KEY>` header against the configured `API_KEY` env var — no rate limiting, no per-route scoping, no signature/HMAC scheme. |
 | Swagger / OpenAPI UI | API documentation, generated per running backend instance | `backend/src/main.ts` (`SwaggerModule.setup('api', app, document)`) | N/A | Swagger UI is mounted at `/api` on every instance and is **not excluded** from the global `ApiKeyGuard` in the code reviewed — i.e. it also requires the bearer token like any other route, based on `app.useGlobalGuards` being registered before/covering all routes. |
 
+## slack-relay/ (separate service, not part of the four-tier app above)
+
+Added 2026-08-14 (`openspec/changes/slack-answer-relay/`), a standalone Node/TS
+service with no shared code with `backend/`/`frontend/`. Relays the PM's
+threaded Slack replies into `@claude <answer>` comments on the matching
+GitHub issue, consumed downstream by `proposal-answer-sync.yml`.
+
+| Service | Used for | Entry point in code | Gotchas |
+|---|---|---|---|
+| Slack Socket Mode (`@slack/socket-mode`) | Inbound event delivery — the service opens an *outbound* WebSocket to Slack and receives `message` events over it | `slack-relay/src/socketReceiver.ts` (`connectSocketMode`), authenticated via `SLACK_APP_TOKEN` (App-Level Token, `connections:write` scope) | Pivoted from an HTTP webhook receiver (Phase 0) to this transport the same day (Phase 0.5), once Socket Mode was found already enabled on the Slack App — see "Webhooks we receive" below. Only delivers events for channels the bot has been invited into. |
+| Slack Web API (`chat.postMessage`, `reactions.add`) | Posting in-thread failure/ambiguity notices and the ✅ success reaction | `slack-relay/src/slackClient.ts` (`SlackClient`), authenticated via `SLACK_BOT_TOKEN` (needs `channels:history`/`chat:write` scopes) | `SlackClient.call()` centrally checks the response's `ok` field for all three methods — an earlier version silently no-op'd on scope/auth failures (fixed in Ring 2 review, see `LEARNINGS.md`). |
+| GitHub REST API (issue comments) | Posting the relayed `@claude <answer>` comment | `slack-relay/src/githubClient.ts` (`GithubClient`), authenticated via `SLACK_RELAY_GH_PAT` | Deliberately a separate, fine-grained, Issues-only PAT for this one repo — never reuses `DISPATCH_TOKEN` or any Actions secret. |
+
 ## Webhooks we receive
 
-None found. No webhook endpoint, signature-verification code, or inbound-callback route exists anywhere in `backend/src` or `frontend/src`.
+None found in `backend/src` or `frontend/src`. `slack-relay/` also has no
+inbound webhook — its Phase 0 HTTP receiver (`app.ts`, HMAC signature
+verification) was replaced 2026-08-14 by Socket Mode's outbound-only
+WebSocket connection (see table above); the service never binds a port.
 
 ## Environment variables
 

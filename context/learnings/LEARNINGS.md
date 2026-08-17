@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-14
+last_verified: 2026-08-17
 source: compound loop
 confidence: high
 owner: context steward (rotating)
@@ -10,6 +10,69 @@ owner: context steward (rotating)
 <!-- Newest first. Entry format below. When a learning hardens into a permanent rule,
      move it to rules/ or CONVENTIONS.md and replace the body with a link.
      Prune quarterly: anything not referenced in 6 months gets archived. -->
+
+## 2026-08-14 — A handler with several sequential fallible external calls needs a catch at every one, not just the ones a diff happens to touch `[graduated → rules/general.md#code, rule 14]`
+
+- **Symptom:** PR #20's `RelayHandler.handle()` makes several sequential
+  `await`ed external calls (Slack thread lookup, GitHub comment post, disk
+  dedupe write, Slack notice/reaction). Across seven Ring 2 review passes,
+  four separate rounds each found the *same shape* of bug in a different
+  call: a failed GitHub post was silently swallowed with no Slack feedback
+  (round 2, nit); `recordRelayed`'s disk write had no `try/catch`, risking a
+  duplicate relay if it threw after a successful GitHub post (round 3,
+  should-fix); `fetchThreadParentText` had no `try/catch` at all, leaving
+  the thread permanently claimed with zero PM-facing notice on failure
+  (round 5, should-fix); and `SlackClient.addReaction`/`postThreadReply`
+  never checked the Slack API's own `ok` field, so a scope/auth/rate-limit
+  failure failed completely silently (round 5, should-fix). None of these
+  were caught by the growing test suite because every mock of an external
+  call used `mockResolvedValue`/`mockResolvedValueOnce` — never a rejection.
+- **Root cause:** wrapping *some* fallible calls in a handler but not others
+  is easy to do incrementally (each call gets added, tested happy-path, and
+  reviewed in isolation) and easy to miss reviewing as a whole, since the
+  gap is an absence rather than a visible line of code. A test suite built
+  the same incremental way inherits the same blind spot — nothing forces a
+  rejection-path test for a call nobody has seen fail yet.
+- **Rule adopted:** in any handler that makes more than one sequential
+  awaited external call (network or disk I/O) with no centralized exception
+  filter behind it, every one of those calls needs its own explicit failure
+  handling (catch + user-facing notice + any state cleanup, e.g. releasing
+  a claim) — and at least one test per external call point that simulates
+  that specific call rejecting, not just resolving.
+- **Origin:** PR #20 (`slack-answer-relay`) Ring 2 review rounds 2, 3, and 5
+  (`slack-relay/src/relayHandler.ts`, `slackClient.ts`); graduated to
+  `rules/general.md` rule 14 by context-gardener given four independent
+  recurrences of the identical gap within one PR's review history.
+
+## 2026-08-14 — A GitHub Actions workflow file cannot review the PR that modifies it
+
+- **Symptom:** PR #20 originally bundled a real, pre-existing bug fix
+  (`ai-pr-review.yml` missing a PR-vs-tracking-issue exclusion guard,
+  causing an `@claude <answer>` reply on an "Open question: " issue to
+  double-fire both that workflow and `proposal-answer-sync.yml`) into the
+  same branch as the `slack-answer-relay` feature work. The review run on
+  that PR exited with "Workflow validation failed... your workflow will
+  begin working once you merge your PR" and posted nothing — because the
+  version of `ai-pr-review.yml` GitHub Actions runs for a PR's checks is
+  the one on the PR's own branch, and a workflow file change on a branch
+  isn't trusted to run its own modified logic against that same branch
+  until after merge. The fix (`9fb1ac8`) was to revert the workflow-file
+  change out of the branch and land it directly on `main` instead
+  (`3bb67d3`), so the PR could get a real Ring 2 review of its actual
+  (non-workflow) diff.
+- **Root cause:** not a project-specific bug — this is GitHub Actions'
+  general behavior for any workflow-file change bundled with the PR meant
+  to be reviewed by that same workflow. Easy to not anticipate, since every
+  *other* kind of file change in this repo gets reviewed normally on its
+  own PR.
+- **Rule adopted (not yet graduated — first observed occurrence):** a
+  change to a `.github/workflows/*.yml` file that Ring 2 review itself
+  depends on (currently just `ai-pr-review.yml`) should land as its own,
+  separate, minimal PR/commit — never bundled into a feature branch — since
+  bundling it silently prevents that feature branch from ever getting a
+  real review.
+- **Origin:** PR #20 (`slack-answer-relay`), commits `9fb1ac8`/`3bb67d3`,
+  2026-08-14.
 
 ## 2026-08-13 — Spec/context edits keep landing bundled with the feature commit that motivated them, despite rules 5/7 already existing
 

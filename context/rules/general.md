@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-13
+last_verified: 2026-08-17
 source: retroactive
 confidence: medium
 owner: tech lead
@@ -73,3 +73,11 @@ owner: tech lead
     deterministically.
 13. Both chaincodes deploy as chaincode-as-a-service (ccaas), not classic
     packaging.
+14. A handler that makes more than one sequential awaited external call
+    (network or disk I/O) with no centralized exception filter behind it
+    must give every one of those calls its own explicit failure handling
+    (catch + user-facing notice + any state cleanup, e.g. releasing a
+    claim) — and a test per call point that simulates that specific call
+    rejecting, not just resolving. (Real pattern, recurred 4 times within
+    one PR's review history: PR #20's `RelayHandler.handle()` — see
+    `context/learnings/LEARNINGS.md`.)

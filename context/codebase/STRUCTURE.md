@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-07-29
+last_verified: 2026-08-17
 source: code-derived
 confidence: medium
 owner: tech lead
@@ -38,6 +38,7 @@ BLC-Consortium-V1/
 │       ├── components/             # Presentational React (certificate-table, status-badge, nav-bar) + components/ui/ (shadcn primitives)
 │       ├── lib/                    # session.ts (signed JWT cookie), backend.ts (server-only fetch proxy), institutions.ts (hardcoded org directory), types.ts/format.ts/error-messages.ts
 │       └── proxy.ts                # Next 16's middleware.ts replacement — session-verifying route gate
+├── slack-relay/                   # Standalone Node/TS service (added 2026-08-14) — relays the PM's threaded Slack replies into `@claude <answer>` GitHub issue comments; connects outbound to Slack via Socket Mode, no shared code with backend/frontend, not part of the four-tier app described in ARCHITECTURE.md
 ├── docker/                        # orderer-base.yaml / peer-base.yaml — shared compose fragments blcgen's templates extend
 ├── docs/                          # Design doc, build/error logs, demo prep — narrative project history, not verified as ground truth here
 └── context/codebase/              # This map (ARCHITECTURE.md, STRUCTURE.md) — generated from source, not from docs/

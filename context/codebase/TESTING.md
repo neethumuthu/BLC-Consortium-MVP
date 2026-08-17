@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-13
+last_verified: 2026-08-17
 source: code-derived
 confidence: medium
 owner: QA engineer
@@ -53,6 +53,7 @@ Honest inventory of what actually exists, by layer — there is no test pyramid 
 | `network/cmd/blcgen`, `network/internal/generate` | No test files | — | — |
 | `backend/src` (NestJS) | One real test file as of 2026-08-12: `common/guards/api-key.guard.spec.ts` (5 cases, `ApiKeyGuard`'s `READ_ONLY_API_KEY` behavior). `package.json` now has a working `jest` block (ts-jest preset). Everything else in `backend/src` still has zero coverage. | Confirmed via a real `/opsx:onboard` run (PR #15) | No — CI exists but none of its 8 workflows run `npm run test`/`jest` against this package |
 | `frontend/src` (Next.js) | Zero test files, zero test tooling installed. `package.json` scripts are `dev`/`build`/`start`/`lint` only. | — | — |
+| `slack-relay/src` (standalone service, added 2026-08-14) | Real, thorough unit tests across every module (`config`, `dedupeStore`, `eventFilter`, `githubClient`-consuming `relayHandler`, `linkResolver`, `slackClient`, `slackText`, `socketReceiver`) — 58 `it(...)` blocks as of the Socket Mode pivot, grown out of seven Ring 2 review passes (see `LEARNINGS.md`). `package.json` has its own working `jest`/`ts-jest` config, separate from `backend/`'s. | Iterative, driven by Ring 2 review findings each round | No — same as every other layer here, no CI workflow runs `npm test` for `slack-relay/` |
 
 This is a **unit-test-only** picture, still overwhelmingly concentrated in the two Go chaincodes and one small Go config package — the single backend test (above) is real but covers one guard's one behavior, not a suite. There is no integration test (nothing spins up a real Fabric network, CouchDB, or the NestJS app in-process against it), no end-to-end test, and no frontend test of any kind (unit, component, or e2e/Playwright).
 
