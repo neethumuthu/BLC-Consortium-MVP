@@ -32,6 +32,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Temporary diagnostic for issue #27 (2 reproducible silent-no-ops,
+          # 2026-08-17) - same technique already used and reverted for the
+          # 2026-08-12 recurrence of this exact symptom (see ERROR_LOG.md).
+          # Remove once root-caused.
+          show_full_output: true
           # PR #9 (context-gardener's first real PR) failed with "Workflow
           # initiated by non-human actor: claude (type: Bot)" - the action
           # refuses to act on any PR whose author isn't human unless its bot
