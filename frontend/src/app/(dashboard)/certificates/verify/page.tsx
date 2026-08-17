@@ -34,7 +34,7 @@ export default async function VerifyCertificatePage({
     try {
       result = await backendFetch<VerificationResult>(
         session.institutionId,
-        `/certificates/${id}/verification`,
+        `/certificates/${encodeURIComponent(id)}/verification`,
       );
     } catch (err) {
       error = err instanceof BackendError ? humanizeBackendError(err.message) : "Something went wrong while verifying this certificate.";

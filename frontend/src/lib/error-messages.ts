@@ -1,11 +1,12 @@
 import "server-only";
-import { INSTITUTIONS, displayNameFor } from "./institutions";
 
 // Rewrites raw backend/chaincode error text (see
 // backend/src/common/filters/fabric-exception.filter.ts and the Go
-// fmt.Errorf strings it forwards) into plain language, and replaces any
-// raw MSP ID with its display name as a safety net for patterns not
-// explicitly matched below.
+// fmt.Errorf strings it forwards) into plain language. Anything not
+// explicitly matched below falls back to a fixed generic message (see
+// the end of this function) rather than echoing the raw text - see
+// issue #21 for why a "safety net" that displayed unmatched text (even
+// with MSP-ID substitution) was itself a real defect.
 export function humanizeBackendError(rawMessage: string): string {
   const message = rawMessage.trim();
 
@@ -46,13 +47,12 @@ export function humanizeBackendError(rawMessage: string): string {
     return "This proposal is no longer open for voting.";
   }
 
-  return withDisplayNames(message);
-}
-
-function withDisplayNames(message: string): string {
-  let result = message;
-  for (const institution of INSTITUTIONS) {
-    result = result.split(institution.institutionId).join(displayNameFor(institution.institutionId));
-  }
-  return result;
+  // Anything not explicitly matched above is unverified, raw backend/
+  // framework text (chaincode error, HTTP framework text like "Cannot GET
+  // ...", a stack trace, etc.) - TESTING.md's own cross-cutting goal treats
+  // any raw backend error reaching the UI as a real defect, not a nitpick,
+  // so this must never echo the raw message back, even with display-name
+  // substitution (that "safety net" was itself how issue #21's bug leaked
+  // through - a not-obviously-wrong-looking string that was still raw).
+  return "Something went wrong. Please try again.";
 }
