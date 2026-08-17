@@ -3120,3 +3120,44 @@ warranted; documented plainly here instead of rewriting history to hide
 it. Also fixed a second, real finding from the same review: `approvedBy`
 MSP IDs were rendered raw instead of through `displayNameFor()`, unlike
 every other MSP-ID-bearing field in this app.
+
+## Phase 19 — CouchDB default password rotated ahead of going public, another rule-5/7 violation caught (2026-08-17)
+
+Ahead of the team's 2026-08-17 workshop decision to make this repo public
+as a temporary branch-protection workaround, rotated
+`network/deployment/local.yaml`'s `couchdb_admin_password` away from the
+well-known Fabric-tutorial default (`adminpw`) to a generated value —
+already fully config-driven (local.yaml → Go config → template), so a
+value-only change. Deliberately did **not** attempt the CA
+bootstrap/org-admin credentials (`admin:adminpw`, `orgadminpw`) in the
+same pass — those aren't config-driven at all, and fixing them properly
+means adding new Go config fields and editing `crypto.sh`'s
+`bootstrap_org`, which `CONCERNS.md` itself flags as senior-human-only;
+documented as an explicitly deferred, tracked gap instead.
+
+**A third occurrence of the same rule-5/7 bundling pattern, caught by
+Ring 2 on PR #25, not self-caught** — the same one already logged in
+Phase 18 and in `context/learnings/LEARNINGS.md`'s 2026-08-13 entry. The
+first commit bundled the infra fix (`local.yaml`) together with a
+`context/` doc edit (`CONCERNS.md`), no change-id, no BUILD_LOG note.
+Fixed the same way as Phase 18: created `rotate-couchdb-default-password`
+as a real, explicitly-labeled retroactive OpenSpec change (`skip_specs:
+true`), then archived — not rewriting the already-pushed commit.
+
+Ring 2 also caught a real rule-11 finding (grep the rest of `context/`
+for the same underlying fact, not just the file a diff touched):
+`INTEGRATIONS.md` and `STACK.md` still asserted the old `admin`/`adminpw`
+CouchDB default as current fact. Both corrected in the same pass. **One
+of Ring 2's three citations for this finding was checked directly and
+found wrong** — it cited `ARCHITECTURE.md:22-27` as containing a stale
+CouchDB-credentials claim; that file has no such claim anywhere, at
+those lines or otherwise (confirmed via direct read and a repo-wide
+grep). Not "fixed," since there was nothing there to fix — noted here so
+this doesn't get miscounted as a fourth stale-doc instance later.
+
+Ring 2 also raised a fair should-fix: rotating a value that stays
+committed to the same repo that's about to go public doesn't protect
+against anyone who actually reads the file, only against a scanner
+keying off the literal string `adminpw`. `CONCERNS.md`'s own text already
+says this plainly — the real fix (generate at bootstrap time, don't
+commit a default at all) remains open, not resolved by this change.
