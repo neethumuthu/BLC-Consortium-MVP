@@ -6,9 +6,13 @@ export class GithubClient {
   ) {}
 
   /**
-   * Posts the exact same `@claude <answer>` comment the PM would otherwise
-   * have typed directly on GitHub - proposal-answer-sync.yml's own trigger
-   * and scope are completely unchanged by this relay existing.
+   * Posts an `@claude ...` comment carrying the PM's answer - not the
+   * exact bytes they typed in Slack (relayHandler.ts prefixes it with an
+   * attribution line, since this posts via a personal PAT with no
+   * "on behalf of" concept). proposal-answer-sync.yml's own trigger and
+   * scope are completely unchanged by this relay existing - it reads the
+   * answer via an LLM prompt, not a strict parser, so the added prefix
+   * doesn't affect it.
    */
   async postIssueComment(issueNumber: string, body: string): Promise<void> {
     const response = await fetch(

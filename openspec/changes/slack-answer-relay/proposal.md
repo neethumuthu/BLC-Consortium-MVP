@@ -18,18 +18,29 @@ so would make `requirements-nudge.yml` nudge Dominik about it automatically
 — and the explicit decision (made twice now, 2026-08-13 and again
 2026-08-14) is to build the missing direction without chasing that
 sign-off first, not to force the question via automation. If this turns
-out to answer the wrong problem, the fix is cheap: the relay only ever
-posts the same `@claude <answer>` comment a human would already type.
+out to answer the wrong problem, the fix is cheap: the relay's comment is
+still a plain `@claude ...` mention that `proposal-answer-sync.yml`
+interprets the same way regardless.
+**Updated 2026-08-17:** the relay no longer posts the exact same text a
+human typing directly on GitHub would — see the attribution fix below.
 
 ## What Changes
 
 - New capability: a small relay service (`slack-relay/`) that listens for
-  the PM's threaded replies on the existing Slack nudge and posts the
-  equivalent `@claude <answer>` comment on the linked GitHub issue
-  automatically, with a ✅ reaction back in Slack on success.
+  the PM's threaded replies on the existing Slack nudge and posts an
+  `@claude ...` comment on the linked GitHub issue automatically, with a
+  ✅ reaction back in Slack on success.
 - `proposal-answer-sync.yml`'s own scope, trigger, and behavior are
-  completely unchanged — the relay produces the same comment a human
-  would type; nothing downstream needs to know the difference.
+  completely unchanged — it still just needs an `@claude` mention on the
+  right issue; nothing downstream needs to know the difference.
+- **Added 2026-08-17, real gap found live-testing:** the relayed comment
+  is prefixed `@claude Relayed from <PM name>'s Slack reply: <answer>`,
+  not a byte-for-byte `@claude <answer>` a human would type. The relay
+  posts via a personal GitHub PAT (`SLACK_RELAY_GH_PAT`), which has no
+  "posted on behalf of" concept — without this prefix, the comment showed
+  up authored by the PAT's owner, misattributing the PM's actual words.
+  `proposal-answer-sync.yml` is unaffected since it reads the answer via
+  an LLM prompt, not a strict parser.
 - The `ai-pr-review.yml` PR-vs-tracking-issue guard fix originally
   planned as an adjacent fix here was **pulled out and landed separately,
   directly on `main`**, not as part of this change — GitHub Actions won't
@@ -56,7 +67,8 @@ not just docs) is in `design.md`.
 
 ### New Capabilities
 - `slack-answer-relay`: relays a PM's threaded Slack reply to the
-  matching GitHub issue as an `@claude <answer>` comment.
+  matching GitHub issue as an attributed `@claude ...` comment (see the
+  2026-08-17 update above).
 
 ### Modified Capabilities
 (none — `proposal-answer-sync.yml` and `requirements-nudge.yml` are

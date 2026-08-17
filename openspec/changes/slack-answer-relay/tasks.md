@@ -78,13 +78,14 @@ source-verified `@slack/socket-mode` API.
 
 ## 5. Phase 3 — live end-to-end verification
 
-**Status as of 2026-08-17: still blocked, real progress made.** First live attempts (4 real threaded replies from Dominik across the day) surfaced two separate, real bugs, neither catchable without an actual live attempt:
+**Status as of 2026-08-17: core relay confirmed working end to end.** Live attempts (5 real threaded replies from Dominik across the day) surfaced three separate, real bugs, none catchable without an actual live attempt:
 1. The Phase 1 gaps in 3.6 above (private channel scope + bot membership) — the first 3 replies were never received by the relay at all, confirmed via `journalctl` showing zero log activity across all three.
-2. Once 3.6 was fixed and a 4th reply was received: `SlackClient.fetchThreadParentText` called `conversations.replies` via a JSON POST body — confirmed live that this specific Slack API method rejects that (`invalid_arguments`, "missing required field" for every field even though sent), unlike `chat.postMessage`/`reactions.add` which do accept JSON. This is why it surfaced as a thread-lookup failure rather than an auth error — the relay's own JSON-based fallback notice posted successfully, masking the real cause. Fixed in a dedicated PR, not yet deployed to the VM as of this writing.
+2. Once 3.6 was fixed and a 4th reply was received: `SlackClient.fetchThreadParentText` called `conversations.replies` via a JSON POST body — confirmed live that this specific Slack API method rejects that (`invalid_arguments`, "missing required field" for every field even though sent), unlike `chat.postMessage`/`reactions.add` which do accept JSON. Fixed and deployed.
+3. On the 5th reply, with both fixes deployed: the relay fully succeeded (`{ action: 'relayed', issueNumber: '24' }`) and `proposal-answer-sync.yml` fired correctly — but `reactions.add` failed with `missing_scope` (`reactions:write` was never added, only `channels:history`/`chat:write`/`groups:history`). The relay itself doesn't report this as a failure (matches 1.16's own "a missing emoji shouldn't turn a real success into a reported failure" design) — but it does mean 5.3 below wasn't actually observable yet. Fix: add `reactions:write` scope.
 
-**Not yet re-attempted with the fix live** — needs redeploying to the VM, then one more real reply from Dominik.
+**Also found and fixed the same day, not blocking but real:** the relayed comment showed up on GitHub authored by the PAT owner (Neethu), not the PM who actually answered in Slack (Dominik) — `SLACK_RELAY_GH_PAT` is a personal token with no "posted on behalf of" concept. Fixed by prefixing the comment with `@claude Relayed from <PM name>'s Slack reply: ...` (separate PR; also required adding `PM_DISPLAY_NAME` to config, and updating `design.md`/`proposal.md`'s wire-format claims to match — those said `@claude <answer>` verbatim, no longer accurate).
 
-- [ ] 5.1 A real threaded reply from the PM's actual Slack account lands as a `@claude <answer>` comment on the correct GitHub issue
-- [ ] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR
-- [ ] 5.3 The ✅ reaction appears on the PM's Slack message
+- [x] 5.1 A real threaded reply from the PM's actual Slack account lands as an `@claude ...` comment on the correct GitHub issue — confirmed live 2026-08-17, issue #24
+- [x] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR — confirmed live 2026-08-17 (correctly declined to open a PR for this specific test, since it's a throwaway issue with no real `proposal.md` behind it — that's the right call, not a bug)
+- [ ] 5.3 The ✅ reaction appears on the PM's Slack message — blocked on the missing `reactions:write` scope above, not yet re-attempted with it added
 - [ ] 5.4 Log the completed deployment in `docs/BUILD_LOG.md`, matching the existing Phase 15/16/17/18 convention

@@ -1,7 +1,7 @@
 {
   "name": "blc-slack-relay",
   "version": "0.1.0",
-  "description": "Relays the PM's threaded Slack replies on requirements-nudge.yml's blocked-change nudges into @claude <answer> comments on the matching GitHub issue",
+  "description": "Relays the PM's threaded Slack replies on requirements-nudge.yml's blocked-change nudges into attributed @claude comments on the matching GitHub issue",
   "private": true,
   "engines": {
     "node": ">=20.9.0"
