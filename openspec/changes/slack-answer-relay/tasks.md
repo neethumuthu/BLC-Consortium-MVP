@@ -6,7 +6,7 @@
 - [x] 1.4 Implement event filtering (no subtype, correct PM user, must be threaded)
 - [x] 1.5 Implement parent-message link resolution with multi-issue disambiguation (explicit `#n` mention, then distinctive-word overlap, else refuse to guess)
 - [x] 1.6 Implement two-layer dedup: in-memory `event_id`, disk-persisted per-thread relay record
-- [x] 1.7 Implement the GitHub comment relay (`@claude <reply text>`) and the Slack ✅ reaction
+- [x] 1.7 Implement the GitHub comment relay (`@claude <reply text>` at the time — see the 2026-08-17 attribution-prefix update in Phase 3 below, current format differs) and the Slack ✅ reaction
 - [x] 1.8 Wire it together in `main.ts` (Express app, raw-body capture for signature verification, `/slack/events` + `/healthz`)
 - [x] 1.9 Unit tests against synthetic payloads: valid reply, tampered/expired/missing signature, wrong user, edited-message subtype, single-link parent, multi-link parent with and without a disambiguating hint, duplicate `event_id`, already-relayed thread, no-issue-link parent — all passing (43/43, see 1.12/1.13)
 - [x] 1.10 Verify the production build compiles (`npm run build` → `dist/main.js`)
@@ -78,13 +78,14 @@ source-verified `@slack/socket-mode` API.
 
 ## 5. Phase 3 — live end-to-end verification
 
-**Status as of 2026-08-17: still blocked, real progress made.** First live attempts (4 real threaded replies from Dominik across the day) surfaced two separate, real bugs, neither catchable without an actual live attempt:
+**Status as of 2026-08-17: core relay confirmed working end to end.** Live attempts (5 real threaded replies from Dominik across the day) surfaced three separate, real bugs, none catchable without an actual live attempt:
 1. The Phase 1 gaps in 3.6 above (private channel scope + bot membership) — the first 3 replies were never received by the relay at all, confirmed via `journalctl` showing zero log activity across all three.
-2. Once 3.6 was fixed and a 4th reply was received: `SlackClient.fetchThreadParentText` called `conversations.replies` via a JSON POST body — confirmed live that this specific Slack API method rejects that (`invalid_arguments`, "missing required field" for every field even though sent), unlike `chat.postMessage`/`reactions.add` which do accept JSON. This is why it surfaced as a thread-lookup failure rather than an auth error — the relay's own JSON-based fallback notice posted successfully, masking the real cause. Fixed in a dedicated PR, not yet deployed to the VM as of this writing.
+2. Once 3.6 was fixed and a 4th reply was received: `SlackClient.fetchThreadParentText` called `conversations.replies` via a JSON POST body — confirmed live that this specific Slack API method rejects that (`invalid_arguments`, "missing required field" for every field even though sent), unlike `chat.postMessage`/`reactions.add` which do accept JSON. Fixed and deployed.
+3. On the 5th reply, with both fixes deployed: the relay fully succeeded (`{ action: 'relayed', issueNumber: '24' }`) and `proposal-answer-sync.yml` fired correctly — but `reactions.add` failed with `missing_scope` (`reactions:write` was never added, only `channels:history`/`chat:write`/`groups:history`). The relay itself doesn't report this as a failure (matches 1.16's own "a missing emoji shouldn't turn a real success into a reported failure" design) — but it does mean 5.3 below wasn't actually observable yet. **`reactions:write` scope added and app reinstalled, 2026-08-17** — not yet re-attempted with it live.
 
-**Not yet re-attempted with the fix live** — needs redeploying to the VM, then one more real reply from Dominik.
+**Also found and fixed the same day, not blocking but real:** the relayed comment showed up on GitHub authored by the PAT owner (Neethu), not the PM who actually answered in Slack (Dominik) — `SLACK_RELAY_GH_PAT` is a personal token with no "posted on behalf of" concept. Fixed by prefixing the comment with `@claude Relayed from <PM name>'s Slack reply: ...` (separate PR; also required adding `PM_DISPLAY_NAME` to config, and updating `design.md`/`proposal.md`'s wire-format claims to match — those said `@claude <answer>` verbatim, no longer accurate). **Deploy status, tracked explicitly per Ring 2's own request not to leave this implicit:** `PM_DISPLAY_NAME=Dominik` has already been added to the VM's `.env` (2026-08-17) — safe to do ahead of merge, since the currently-running relay build predates this required field and isn't affected by its presence. The relay itself has **not** yet been rebuilt/restarted with this PR's code; `config.ts`'s `requireEnv("PM_DISPLAY_NAME")` will only take effect once that happens, and the `.env` value is already there waiting for it.
 
-- [ ] 5.1 A real threaded reply from the PM's actual Slack account lands as a `@claude <answer>` comment on the correct GitHub issue
-- [ ] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR
-- [ ] 5.3 The ✅ reaction appears on the PM's Slack message
+- [x] 5.1 A real threaded reply from the PM's actual Slack account lands as an `@claude ...` comment on the correct GitHub issue — confirmed live 2026-08-17, issue #24
+- [x] 5.2 `proposal-answer-sync.yml` fires off that comment and opens the expected PR — confirmed live 2026-08-17 (correctly declined to open a PR for this specific test, since it's a throwaway issue with no real `proposal.md` behind it — that's the right call, not a bug)
+- [ ] 5.3 The ✅ reaction appears on the PM's Slack message — blocked on the missing `reactions:write` scope above, not yet re-attempted with it added
 - [ ] 5.4 Log the completed deployment in `docs/BUILD_LOG.md`, matching the existing Phase 15/16/17/18 convention

@@ -27,6 +27,7 @@ function buildConfig(storePath: string): Config {
     slackAppToken: "xapp-fake",
     slackBotToken: "xoxb-fake",
     pmSlackMemberId: PM_ID,
+    pmDisplayName: "Dominik",
     githubToken: "ghp_fake",
     githubOwner: "neethumuthu",
     githubRepo: "BLC-Consortium-MVP",
@@ -83,7 +84,7 @@ describe("RelayHandler", () => {
     const outcome = await handler.handle(buildEvent());
 
     expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
-    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude let's go with option 1");
+    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude Relayed from Dominik's Slack reply: let's go with option 1");
     expect(slack.addReaction).toHaveBeenCalledWith(CHANNEL, "1700000010.000100", "white_check_mark");
   });
 
@@ -161,7 +162,7 @@ describe("RelayHandler", () => {
     const outcome = await handler.handle(buildEvent());
 
     expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
-    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude let's go with option 1");
+    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude Relayed from Dominik's Slack reply: let's go with option 1");
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to add the confirmation reaction"),
       expect.any(Error),
@@ -181,7 +182,7 @@ describe("RelayHandler", () => {
     // The GitHub comment genuinely succeeded - the PM must not be told
     // it failed, and should still see the confirmation reaction.
     expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
-    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude let's go with option 1");
+    expect(github.postIssueComment).toHaveBeenCalledWith("20", "@claude Relayed from Dominik's Slack reply: let's go with option 1");
     expect(slack.addReaction).toHaveBeenCalledWith(CHANNEL, "1700000010.000100", "white_check_mark");
     expect(slack.postThreadReply).not.toHaveBeenCalled();
     expect(consoleError).toHaveBeenCalledWith(
@@ -233,7 +234,7 @@ describe("RelayHandler", () => {
     expect(outcome).toEqual({ action: "relayed", issueNumber: "20" });
     expect(github.postIssueComment).toHaveBeenCalledWith(
       "20",
-      "@claude docs & spec look fine, thanks @U99999 - see the doc (https://example.com)",
+      "@claude Relayed from Dominik's Slack reply: docs & spec look fine, thanks @U99999 - see the doc (https://example.com)",
     );
   });
 
