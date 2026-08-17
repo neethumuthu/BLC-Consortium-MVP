@@ -1,7 +1,7 @@
 fabric_version: 2.5.0
 ca_version: 1.5.15
 couchdb_admin_user: admin
-couchdb_admin_password: adminpw
+couchdb_admin_password: oKexX6BhklUuCabmauWnNL
 
 orderer:
   ca_port: 6054
