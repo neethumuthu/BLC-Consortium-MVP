@@ -32,11 +32,6 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Temporary diagnostic for issue #27 (2 reproducible silent-no-ops,
-          # 2026-08-17) - same technique already used and reverted for the
-          # 2026-08-12 recurrence of this exact symptom (see ERROR_LOG.md).
-          # Remove once root-caused.
-          show_full_output: true
           # PR #9 (context-gardener's first real PR) failed with "Workflow
           # initiated by non-human actor: claude (type: Bot)" - the action
           # refuses to act on any PR whose author isn't human unless its bot
@@ -88,4 +83,20 @@ jobs:
           # by making "execute gh pr comment" an explicit mandatory final step
           # rather than trusting "post findings as PR review comments" to be
           # read as an instruction to run a tool, not just describe an outcome.
-          claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr review:*),Read,Grep,Glob"'
+          #
+          # 2026-08-17 (issue #27): recurred twice more on re-review passes
+          # (PR #25's 3rd pass, PR #26's 2nd - 5 and 4 permission denials over
+          # 8 turns each, same "No buffered inline comments" ending). Could
+          # not get the full transcript this time - re-enabling
+          # show_full_output and re-triggering hit an unrelated GitHub API
+          # 404 on that specific run's job data, which didn't clear on retry.
+          # Root cause not re-confirmed from a transcript this time, only
+          # inferred from the denial count matching the 2026-08-12 pattern -
+          # widened allowedTools with the commands the review prompt's own
+          # 6 checklist items would plausibly need (running tests/builds to
+          # check tasks.md claims, viewing the PR diff/checks) rather than
+          # only the self-discovery commands from last time, since this
+          # recurred even after that fix. If this recurs again, the honest
+          # next step is re-attempting the show_full_output diagnosis, not
+          # guessing a third time.
+          claude_args: '--allowedTools "Bash(git diff:*),Bash(git log:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(find:*),Bash(npm test:*),Bash(npx tsc:*),Bash(go test:*),Bash(go run:*),Bash(go build:*),Read,Grep,Glob"'
