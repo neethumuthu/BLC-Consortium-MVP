@@ -3147,13 +3147,28 @@ true`), then archived — not rewriting the already-pushed commit.
 Ring 2 also caught a real rule-11 finding (grep the rest of `context/`
 for the same underlying fact, not just the file a diff touched):
 `INTEGRATIONS.md` and `STACK.md` still asserted the old `admin`/`adminpw`
-CouchDB default as current fact. Both corrected in the same pass. **One
-of Ring 2's three citations for this finding was checked directly and
-found wrong** — it cited `ARCHITECTURE.md:22-27` as containing a stale
-CouchDB-credentials claim; that file has no such claim anywhere, at
-those lines or otherwise (confirmed via direct read and a repo-wide
-grep). Not "fixed," since there was nothing there to fix — noted here so
-this doesn't get miscounted as a fourth stale-doc instance later.
+CouchDB default as current fact. Both corrected in the same pass.
+
+~~**One of Ring 2's three citations for this finding was checked
+directly and found wrong** — it cited `ARCHITECTURE.md:22-27` as
+containing a stale CouchDB-credentials claim; that file has no such
+claim anywhere, at those lines or otherwise (confirmed via direct read
+and a repo-wide grep). Not "fixed," since there was nothing there to fix
+— noted here so this doesn't get miscounted as a fourth stale-doc
+instance later.~~
+
+**Correction (2026-08-17, same day):** the paragraph above was itself
+wrong, caught by Ring 2's *second* review pass on this same PR. There
+are two different `ARCHITECTURE.md` files in this repo — root-level
+`/ARCHITECTURE.md` and `context/codebase/ARCHITECTURE.md`. Only the
+`context/codebase/` one was actually checked; the claim that this was
+"a repo-wide grep" was itself false — the grep run was scoped to
+`context/codebase/*.md` only. Root `/ARCHITECTURE.md` lines 22-34 ("Known
+limitation (2026-07-07)") does contain the exact same stale claim, and
+has now been corrected. Leaving the original wrong claim struck through
+above rather than deleting it, per this project's own established rule
+for correcting an already-recorded claim — this one just happened
+same-day rather than after archiving.
 
 Ring 2 also raised a fair should-fix: rotating a value that stays
 committed to the same repo that's about to go public doesn't protect

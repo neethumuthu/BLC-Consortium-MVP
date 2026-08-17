@@ -19,12 +19,15 @@ during implementation, not on new ideas — file those as follow-ups instead.
 > else on this page (two-pipeline model, config split, repo structure) is
 > unaffected.
 
-> **Known limitation (2026-07-07):** "production-grade" (above) refers
-> only to the Fabric network's *topology* (orderer/peer counts) — it does
-> **not** mean the deployment is production-hardened on security. CouchDB
-> admin credentials (`deployment/local.yaml`'s `couchdb_admin_user`/
-> `couchdb_admin_password`) currently default to `admin`/`adminpw` in
-> plain text in a committed config file. This is a local-dev placeholder,
+> **Known limitation (2026-07-07, corrected 2026-08-17):** "production-grade"
+> (above) refers only to the Fabric network's *topology* (orderer/peer
+> counts) — it does **not** mean the deployment is production-hardened on
+> security. CouchDB admin credentials (`deployment/local.yaml`'s
+> `couchdb_admin_user`/`couchdb_admin_password`) were rotated 2026-08-17
+> away from the well-known Fabric-tutorial default (`admin`/`adminpw`)
+> ahead of making this repo public — still a static, committed value
+> shared by every clone, not a true per-deployment secret (see
+> `context/codebase/CONCERNS.md`). This remains a local-dev placeholder,
 > acceptable for this MVP's Docker Compose-on-one-machine scope, but
 > **must** be replaced with a real secrets-management approach (env file
 > outside git, Docker secrets, or a vault) before this ever runs anywhere
