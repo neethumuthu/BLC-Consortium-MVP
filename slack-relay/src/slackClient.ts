@@ -12,6 +12,25 @@ export class SlackClient {
    * so every caller (fetchThreadParentText, addReaction, postThreadReply)
    * gets this for free instead of failing silently.
    */
+  /**
+   * Every Slack Web API method shares the same `{ok, error}` envelope,
+   * including on HTTP 200 - a scope/auth/rate-limit failure (e.g. the bot
+   * not yet invited to the channel, per Phase 1's own task 2.3) never
+   * shows up as a thrown fetch error or a non-2xx status, only as
+   * `ok: false` in an otherwise-successful response. Shared by both
+   * transport methods below so every caller gets this for free.
+   */
+  private async parseSlackResponse<T extends SlackApiResponse>(
+    response: Response,
+    method: string,
+  ): Promise<T> {
+    const result = (await response.json()) as T;
+    if (!result.ok) {
+      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
+    }
+    return result;
+  }
+
   private async call<T extends SlackApiResponse>(
     method: string,
     body: Record<string, unknown>,
@@ -24,11 +43,7 @@ export class SlackClient {
       },
       body: JSON.stringify(body),
     });
-    const result = (await response.json()) as T;
-    if (!result.ok) {
-      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
-    }
-    return result;
+    return this.parseSlackResponse<T>(response, method);
   }
 
   /**
@@ -43,20 +58,14 @@ export class SlackClient {
     method: string,
     params: Record<string, string | number>,
   ): Promise<T> {
-    const query = new URLSearchParams(
-      Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
-    );
+    const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
     const response = await fetch(`https://slack.com/api/${method}?${query.toString()}`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${this.botToken}`,
       },
     });
-    const result = (await response.json()) as T;
-    if (!result.ok) {
-      throw new Error(`Slack API ${method} failed: ${result.error ?? "unknown error"}`);
-    }
-    return result;
+    return this.parseSlackResponse<T>(response, method);
   }
 
   /**
