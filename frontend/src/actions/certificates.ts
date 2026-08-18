@@ -79,7 +79,7 @@ export async function revokeCertificateAction(
   }
 
   try {
-    await backendFetch<Certificate>(session.institutionId, `/certificates/${certificateId}/revoke`, {
+    await backendFetch<Certificate>(session.institutionId, `/certificates/${encodeURIComponent(certificateId)}/revoke`, {
       method: "POST",
       body: JSON.stringify({ reason }),
     });
