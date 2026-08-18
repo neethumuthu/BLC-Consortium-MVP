@@ -53,6 +53,11 @@ jobs:
               the change's proposal.md.
             - The triggering comment (the one that mentioned you) contains
               the PM's answer - read it from this issue's latest comment.
+            - You already know which issue triggered this run from your own
+              GitHub Actions event context - do not run env, printenv, or
+              gh issue list to rediscover the issue number. Go straight to
+              gh issue view <number> --json number,title,body,comments using
+              the number you already have.
 
             Task:
             1. Read openspec/changes/<id>/proposal.md (using the real id).
@@ -84,11 +89,15 @@ jobs:
           # cause ai-pr-review.yml's allowlist comment already describes:
           # without something to orient with, exploratory commands get denied
           # and the run silently goes nowhere.
-          # TEMPORARY diagnostic flag - a live run (issue #38, 2026-08-18)
-          # hit 3 permission denials over only 4 turns, same fingerprint as
-          # ai-pr-review.yml's own silent-no-op incidents. Enabling full
-          # output once to see exactly which commands got denied, per the
-          # same diagnostic discipline already proven on this repo - remove
-          # this line once the transcript is captured.
-          show_full_output: true
+          #
+          # 2026-08-18 (issue #38): recurred a third time, 3 denials over 4
+          # turns, no PR/comment - confirmed via a full-output diagnostic run
+          # (then reverted) that all 3 were self-discovery attempts (env,
+          # printenv, echo $ISSUE_NUMBER, gh issue list) trying to find the
+          # triggering issue number, none of which are allowed. A second,
+          # full-output retry succeeded anyway (25 turns, found the number
+          # via context it already had) but wasted most of its turn budget
+          # getting there first. Fixed the same way as ai-pr-review.yml's own
+          # fix: told the prompt explicitly that the issue number is already
+          # known from context, removing the reason to explore for it.
           claude_args: '--allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(gh issue view:*),Bash(find:*),Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh issue comment:*)"'
