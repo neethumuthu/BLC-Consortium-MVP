@@ -61,7 +61,7 @@ export async function castVoteAction(
   try {
     await backendFetch<MembershipProposal>(
       session.institutionId,
-      `/institutions/proposals/${proposalId}/vote`,
+      `/institutions/proposals/${encodeURIComponent(proposalId)}/vote`,
       { method: "POST", body: JSON.stringify({ decision }) },
     );
   } catch (error) {
