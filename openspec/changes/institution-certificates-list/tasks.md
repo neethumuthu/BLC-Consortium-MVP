@@ -7,7 +7,7 @@
 ## 2. Verify
 
 - [x] 2.1 `npx tsc --noEmit` and `npx eslint` clean
-- [ ] 2.2 Live-verify on staging (temporary branch deploy): an institution with certificates shows them; an institution with none shows the no-issue-action empty state
+- [x] 2.2 Live-verified on staging (temporary branch deploy, restored to main afterward): BLCFounder shows a real certificate row, InstitutionC (no certs) shows the correct non-misleading empty state
 
 ## 3. Spec sync
 
