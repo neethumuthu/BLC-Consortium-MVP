@@ -7,9 +7,10 @@ self-test. Will be reverted/archived immediately after the test.
 
 ## Open questions
 
-This is a test question to verify the Slack-to-GitHub relay end to end,
-this time with a real reply from Dominik rather than a self-test. Please
-reply with `@claude <any short answer>` on Slack.
+Resolved via issue #38: relay test comment received ("Diagnostic retrigger
+- re-answering to capture a full transcript for the permission-denial
+investigation. Any short answer works."), confirming the Slack-to-GitHub
+answer relay works end-to-end. No open question remains.
 
 ## What Changes
 
