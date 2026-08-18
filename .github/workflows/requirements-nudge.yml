@@ -8,6 +8,7 @@
 name: requirements-nudge
 on:
   push:
+    branches: [main]
     paths: ['openspec/changes/**']
   schedule:
     - cron: '0 8 * * 1-5'        # weekday morning re-nudge for stale questions
@@ -33,6 +34,16 @@ jobs:
             # non-empty content between "## Open questions" and the next heading?
             QUESTION=$(awk '/^## Open questions/{flag=1;next}/^## /{flag=0}flag' "$f" | sed '/^\s*$/d')
             if [ -z "$QUESTION" ]; then
+              continue
+            fi
+            # proposal-answer-sync.yml replaces a resolved question's text
+            # with a note starting "Resolved via issue #<N>: ..." rather
+            # than blanking the section - that text is non-empty, so without
+            # this check a just-answered question still reads as "blocked"
+            # and re-nudges the PM about something they already answered
+            # (real incident, 2026-08-18: happened via a push to the fix
+            # branch itself, before that PR even merged).
+            if echo "$QUESTION" | head -1 | grep -qi '^Resolved via'; then
               continue
             fi
             id=$(dirname "$f" | xargs basename)
