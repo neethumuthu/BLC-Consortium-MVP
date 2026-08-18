@@ -97,8 +97,13 @@ jobs:
             expected result for this account — do not file it as a defect, and
             do not try to work around it.
             Goals are intents — plan your own paths, including unhappy paths.
-            For each finding: severity, reproduction steps, expected vs actual
-            (cite the spec scenario in openspec/specs/ if one exists).
+            For each finding: severity, type [bug|improvement|question] — bug:
+            actually broken or incorrect right now, should just be fixed;
+            improvement: not broken, but could be better, not urgent, shouldn't
+            block anything; question: genuinely ambiguous, needs a human/product
+            decision, don't guess at an answer — reproduction steps, expected vs
+            actual (cite the spec scenario in openspec/specs/ if one exists).
+            Prefix the issue title with the type tag, e.g. "[bug] <title>".
             File one GitHub issue per distinct defect (label: qa-agent) unless an
             open issue already covers it. Finish with a one-paragraph summary.
           claude_args: '--mcp-config .github/qa-mcp.json --allowedTools "mcp__playwright__*,Read,Grep,Bash(gh issue:*)"'

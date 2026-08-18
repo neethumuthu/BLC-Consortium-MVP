@@ -55,8 +55,14 @@ jobs:
             4. Every scenario in the change has a matching test.
             5. tasks.md items claimed complete are actually implemented.
             6. Security smells (secrets, injection, authz gaps).
-            Severity-tag each finding [blocker|should-fix|nit]. Do not comment
-            on style a linter covers.
+            Severity-tag each finding [blocker|should-fix|nit], and separately
+            type-tag it [bug|improvement|question] — bug: actually broken or
+            incorrect right now, should just be fixed; improvement: not broken,
+            but could be better, not urgent, should not block anything; question:
+            genuinely ambiguous, needs a human/product decision, do not guess at
+            an answer. Both tags apply independently, e.g. [blocker][bug] or
+            [nit][improvement] or [should-fix][question]. Do not comment on style
+            a linter covers.
             Your final response text is NOT posted anywhere on its own — writing
             the review is not the same as publishing it. As your LAST action,
             you MUST run `gh pr comment --body "<your findings, formatted as
