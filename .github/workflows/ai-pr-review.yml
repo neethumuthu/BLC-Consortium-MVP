@@ -58,8 +58,8 @@ jobs:
             Severity-tag each finding [blocker|should-fix|nit], and separately
             type-tag it [bug|improvement|question] — bug: actually broken or
             incorrect right now, should just be fixed; improvement: not broken,
-            but could be better, not urgent, shouldn't block anything; question:
-            genuinely ambiguous, needs a human/product decision, don't guess at
+            but could be better, not urgent, should not block anything; question:
+            genuinely ambiguous, needs a human/product decision, do not guess at
             an answer. Both tags apply independently, e.g. [blocker][bug] or
             [nit][improvement] or [should-fix][question]. Do not comment on style
             a linter covers.
