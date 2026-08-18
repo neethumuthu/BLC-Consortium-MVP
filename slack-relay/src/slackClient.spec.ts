@@ -11,21 +11,32 @@ describe("SlackClient", () => {
     jest.restoreAllMocks();
   });
 
-  describe("fetchThreadParentText", () => {
-    it("returns the parent message's text on a successful, ok:true response", async () => {
+  describe("fetchThreadParent", () => {
+    it("returns the parent message's text and isFromBot:false when bot_id is absent (a human-started thread)", async () => {
       mockFetchOnce({ ok: true, messages: [{ ts: "1.0", text: "the original nudge" }] });
       const client = new SlackClient("xoxb-fake");
 
-      await expect(client.fetchThreadParentText("C1", "1.0")).resolves.toBe(
-        "the original nudge",
-      );
+      await expect(client.fetchThreadParent("C1", "1.0")).resolves.toEqual({
+        text: "the original nudge",
+        isFromBot: false,
+      });
+    });
+
+    it("returns isFromBot:true when the parent message has a bot_id - confirmed live 2026-08-17 this is how requirements-nudge.yml's own webhook-posted nudge is attributed (subtype bot_message, bot_id set, no user field at all)", async () => {
+      mockFetchOnce({ ok: true, messages: [{ ts: "1.0", text: "a nudge", bot_id: "B0BM123MAJZ" }] });
+      const client = new SlackClient("xoxb-fake");
+
+      await expect(client.fetchThreadParent("C1", "1.0")).resolves.toEqual({
+        text: "a nudge",
+        isFromBot: true,
+      });
     });
 
     it("calls conversations.replies as a GET with query-string params, not a JSON body - confirmed live 2026-08-17 that this endpoint rejects a JSON body with invalid_arguments even though every field was sent", async () => {
       const fetchSpy = mockFetchOnce({ ok: true, messages: [{ ts: "1.0", text: "x" }] });
       const client = new SlackClient("xoxb-fake");
 
-      await client.fetchThreadParentText("C1", "1.0");
+      await client.fetchThreadParent("C1", "1.0");
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const [url, options] = fetchSpy.mock.calls[0];
@@ -38,14 +49,14 @@ describe("SlackClient", () => {
       mockFetchOnce({ ok: false, error: "channel_not_found" });
       const client = new SlackClient("xoxb-fake");
 
-      await expect(client.fetchThreadParentText("C1", "1.0")).rejects.toThrow("channel_not_found");
+      await expect(client.fetchThreadParent("C1", "1.0")).rejects.toThrow("channel_not_found");
     });
 
     it("throws when ok:true but no messages come back", async () => {
       mockFetchOnce({ ok: true, messages: [] });
       const client = new SlackClient("xoxb-fake");
 
-      await expect(client.fetchThreadParentText("C1", "1.0")).rejects.toThrow(
+      await expect(client.fetchThreadParent("C1", "1.0")).rejects.toThrow(
         "no messages",
       );
     });

@@ -1,17 +1,16 @@
 import { SlackApiResponse, SlackConversationsRepliesResponse } from "./types";
 
+export interface ThreadParent {
+  text: string;
+  /** True only for messages posted by a bot/webhook (e.g. requirements-nudge.yml's
+   * nudge) - a human-started thread has no bot_id at all. Used to decide whether
+   * the relay should engage with a thread in the first place, see relayHandler.ts. */
+  isFromBot: boolean;
+}
+
 export class SlackClient {
   constructor(private readonly botToken: string) {}
 
-  /**
-   * Every Slack Web API method shares the same `{ok, error}` envelope,
-   * including on HTTP 200 - a scope/auth/rate-limit failure (e.g. the bot
-   * not yet invited to the channel, per Phase 1's own task 2.3) never
-   * shows up as a thrown fetch error or a non-2xx status, only as
-   * `ok: false` in an otherwise-successful response. Checked once, here,
-   * so every caller (fetchThreadParentText, addReaction, postThreadReply)
-   * gets this for free instead of failing silently.
-   */
   /**
    * Every Slack Web API method shares the same `{ok, error}` envelope,
    * including on HTTP 200 - a scope/auth/rate-limit failure (e.g. the bot
@@ -74,7 +73,7 @@ export class SlackClient {
    * rather than tracked separately, since Slack is the source of truth
    * for its own message content.
    */
-  async fetchThreadParentText(channel: string, threadTs: string): Promise<string> {
+  async fetchThreadParent(channel: string, threadTs: string): Promise<ThreadParent> {
     const result = await this.callWithQueryParams<SlackConversationsRepliesResponse>(
       "conversations.replies",
       { channel, ts: threadTs, limit: 1 },
@@ -82,7 +81,8 @@ export class SlackClient {
     if (!result.messages || result.messages.length === 0) {
       throw new Error("conversations.replies returned no messages for this thread");
     }
-    return result.messages[0].text ?? "";
+    const parent = result.messages[0];
+    return { text: parent.text ?? "", isFromBot: Boolean(parent.bot_id) };
   }
 
   async addReaction(channel: string, timestamp: string, emoji: string): Promise<void> {

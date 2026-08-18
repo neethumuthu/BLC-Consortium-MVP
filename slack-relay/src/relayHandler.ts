@@ -3,7 +3,7 @@ import { DedupeStore } from "./dedupeStore";
 import { filterEvent } from "./eventFilter";
 import { GithubClient } from "./githubClient";
 import { resolveIssueNumber } from "./linkResolver";
-import { SlackClient } from "./slackClient";
+import { SlackClient, ThreadParent } from "./slackClient";
 import { slackTextToPlainText } from "./slackText";
 import { SlackEventCallback } from "./types";
 
@@ -13,6 +13,7 @@ export type RelayOutcome =
   | { action: "ignored"; reason: string }
   | { action: "duplicate_event" }
   | { action: "already_relayed"; issueNumber: string }
+  | { action: "not_a_bot_thread" }
   | { action: "no_issue_link_found" }
   | { action: "ambiguous"; candidates: string[] }
   | { action: "relayed"; issueNumber: string }
@@ -88,9 +89,9 @@ export class RelayHandler {
       return { action: "concurrent_reply_in_progress" };
     }
 
-    let parentText: string;
+    let parent: ThreadParent;
     try {
-      parentText = await this.slack.fetchThreadParentText(channel, threadTs!);
+      parent = await this.slack.fetchThreadParent(channel, threadTs!);
     } catch (error) {
       // Claimed but never fulfilled - must be released, or every future
       // reply in this thread gets concurrent_reply_in_progress forever
@@ -106,8 +107,21 @@ export class RelayHandler {
       return { action: "thread_lookup_failed", error: message };
     }
 
+    // The PM's team reflexively replies in-thread on everything, not just
+    // this bot's nudges (confirmed 2026-08-17, after this exact behavior
+    // produced a visible "couldn't find a linked issue" notice on several
+    // unrelated human-started threads during testing). Engaging at all on
+    // a thread the bot didn't start would mean posting that notice on
+    // every ordinary team conversation reply - silently stepping aside
+    // here, before even trying to resolve a link, is what actually fixes
+    // that, not just wording the notice more gently.
+    if (!parent.isFromBot) {
+      this.dedupe.releaseClaim(threadTs!);
+      return { action: "not_a_bot_thread" };
+    }
+
     const resolution = resolveIssueNumber(
-      parentText,
+      parent.text,
       replyText,
       this.config.githubOwner,
       this.config.githubRepo,
