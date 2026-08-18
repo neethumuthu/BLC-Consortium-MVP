@@ -19,7 +19,7 @@ export default async function InstitutionDetailPage({ params }: { params: Promis
   let error: string | undefined;
 
   try {
-    institution = await backendFetch<Institution>(session.institutionId, `/institutions/${id}`);
+    institution = await backendFetch<Institution>(session.institutionId, `/institutions/${encodeURIComponent(id)}`);
   } catch (err) {
     error = err instanceof BackendError ? humanizeBackendError(err.message) : "Something went wrong loading this institution.";
   }

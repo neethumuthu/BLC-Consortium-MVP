@@ -23,7 +23,7 @@ export default async function CertificateDetailPage({ params }: { params: Promis
   let error: string | undefined;
 
   try {
-    certificate = await backendFetch<Certificate>(session.institutionId, `/certificates/${id}`);
+    certificate = await backendFetch<Certificate>(session.institutionId, `/certificates/${encodeURIComponent(id)}`);
   } catch (err) {
     error = err instanceof BackendError ? humanizeBackendError(err.message) : "Something went wrong loading this certificate.";
   }
