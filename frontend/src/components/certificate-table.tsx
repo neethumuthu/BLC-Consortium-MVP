@@ -6,15 +6,28 @@ import { EmptyState } from "@/components/empty-state";
 import { formatDate } from "@/lib/format";
 import type { Certificate } from "@/lib/types";
 
-export function CertificateTable({ certificates }: { certificates: Certificate[] }) {
+export function CertificateTable({
+  certificates,
+  showIssueAction = true,
+}: {
+  certificates: Certificate[];
+  /** False on read-only views of another institution's certificates (e.g.
+   * institutions/[id]/page.tsx) - you can't issue on another institution's
+   * behalf, so offering that action there would be misleading. */
+  showIssueAction?: boolean;
+}) {
   if (certificates.length === 0) {
     return (
       <EmptyState
         icon={FileText}
         title="No certificates issued yet"
-        description="Once you issue your first certificate, it will show up here."
-        actionHref="/certificates/new"
-        actionLabel="Issue your first certificate"
+        description={
+          showIssueAction
+            ? "Once you issue your first certificate, it will show up here."
+            : "This institution hasn't issued any certificates yet."
+        }
+        actionHref={showIssueAction ? "/certificates/new" : undefined}
+        actionLabel={showIssueAction ? "Issue your first certificate" : undefined}
       />
     );
   }
