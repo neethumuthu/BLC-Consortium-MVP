@@ -84,4 +84,11 @@ jobs:
           # cause ai-pr-review.yml's allowlist comment already describes:
           # without something to orient with, exploratory commands get denied
           # and the run silently goes nowhere.
+          # TEMPORARY diagnostic flag - a live run (issue #38, 2026-08-18)
+          # hit 3 permission denials over only 4 turns, same fingerprint as
+          # ai-pr-review.yml's own silent-no-op incidents. Enabling full
+          # output once to see exactly which commands got denied, per the
+          # same diagnostic discipline already proven on this repo - remove
+          # this line once the transcript is captured.
+          show_full_output: true
           claude_args: '--allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git diff:*),Bash(gh issue view:*),Bash(find:*),Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*),Bash(gh issue comment:*)"'
