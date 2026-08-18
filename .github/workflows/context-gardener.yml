@@ -36,6 +36,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity for the commit this run will make
+        run: |
+          git config --global user.name "claude-context-gardener[bot]"
+          git config --global user.email "claude-context-gardener[bot]@users.noreply.github.com"
+
       - name: Determine range since last successful run
         id: range
         env:
