@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-14
+last_verified: 2026-08-18
 source: compound loop
 confidence: high
 owner: context steward (rotating)
@@ -10,6 +10,15 @@ owner: context steward (rotating)
 <!-- Newest first. Entry format below. When a learning hardens into a permanent rule,
      move it to rules/ or CONVENTIONS.md and replace the body with a link.
      Prune quarterly: anything not referenced in 6 months gets archived. -->
+
+## 2026-08-18 — A fix at one call site of a shared bug/duplication class doesn't get checked against sibling call sites unless a reviewer happens to catch it
+
+- **Symptom:** Two independent instances this range:
+  1. PR #26: `slackClient.ts`'s new `callWithQueryParams` re-duplicated the `ok:false` response-envelope check that task 1.16 had already centralized once in `SlackClient.call()`, specifically to avoid this duplication. Caught by Ring 2 review and fixed in the same PR (`5b3bcbe`, extracted a shared `parseSlackResponse()`).
+  2. PR #29: `encodeURIComponent(id)` was correctly applied to `certificates/verify/page.tsx` (issue #21) and the new `governance/[id]/page.tsx`, but `institutions/[id]/page.tsx` and `certificates/[id]/page.tsx` build the identical unencoded backend-fetch-path pattern (`` `/institutions/${id}` ``, `` `/certificates/${id}` ``) and were left untouched. Two separate Ring 2 review passes on the same PR both flagged this independently; neither was fixed before merge — confirmed still present as of this gardener run (2026-08-18), see `context/codebase/CONCERNS.md`.
+- **Root cause:** `general.md` rule 11 already requires sweeping `context/`/`AGENTS.md` for restatements of a corrected *documentation* claim, but there's no equivalent discipline for application code — fixing or de-duplicating one call site doesn't prompt a grep for structurally identical sibling call sites, so the same defect/duplication class survives at every site the original report or task didn't happen to name.
+- **Rule adopted:** When fixing a bug or removing duplication at one call site, grep the codebase for other call sites with the same shape (same interpolation pattern, same duplicated logic) before considering the fix done — not just the one site the issue/task named. If a sibling site is found but genuinely out of scope for the current change, log it in `CONCERNS.md`'s Known debt table rather than leaving it silently unswept.
+- **Origin:** PR #26 Ring 2 review (should-fix, self-fixed same PR); PR #29 Ring 2 review, two independent passes (should-fix, unresolved — tracked in `context/codebase/CONCERNS.md`).
 
 ## 2026-08-13 — Spec/context edits keep landing bundled with the feature commit that motivated them, despite rules 5/7 already existing
 
