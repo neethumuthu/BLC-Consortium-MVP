@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-30
+accepted: 2026-08-17
 source: retroactive (reconstructed 2026-07-30 from docs/ERROR_LOG.md's 2026-07-13 entry, "my own 'targeted cleanup' recovery step destroyed InstitutionB's CA root identity, permanently orphaning its already-committed MSP definition")
 deciders: Neethu Muthu
 ---
