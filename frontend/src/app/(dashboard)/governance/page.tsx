@@ -73,7 +73,11 @@ export default async function GovernancePage() {
                 const isOwnApplication = proposal.applicantId === session.institutionId;
                 return (
                   <TableRow key={proposal.proposalId}>
-                    <TableCell className="font-medium">{proposal.applicantName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/governance/${proposal.proposalId}`} className="hover:underline">
+                        {proposal.applicantName}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{displayNameFor(proposal.proposedBy)}</TableCell>
                     <TableCell>
                       <StatusBadge status={proposal.status} />
@@ -119,7 +123,11 @@ export default async function GovernancePage() {
               <TableBody>
                 {resolvedProposals.map((proposal) => (
                   <TableRow key={proposal.proposalId}>
-                    <TableCell className="font-medium">{proposal.applicantName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/governance/${proposal.proposalId}`} className="hover:underline">
+                        {proposal.applicantName}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{displayNameFor(proposal.proposedBy)}</TableCell>
                     <TableCell>
                       <StatusBadge status={proposal.status} />

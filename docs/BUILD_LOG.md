@@ -3176,3 +3176,73 @@ against anyone who actually reads the file, only against a scanner
 keying off the literal string `adminpw`. `CONCERNS.md`'s own text already
 says this plainly — the real fix (generate at bootstrap time, don't
 commit a default at all) remains open, not resolved by this change.
+
+## Phase 20 — Two real QA-agent bugs fixed, a fourth-instance rule-5/7 violation, a genuine spec gap closed (2026-08-17)
+
+Fixed issues #21 (raw `Cannot GET ...` leak on a `/` in a certificate ID,
+`certificates/verify/page.tsx`) and #22 (no UI for `GET
+/institutions/proposals/:proposalId`, despite that route working since
+`2026-08-12-governance-proposal-lookup`). `encodeURIComponent()` on the
+verify path turned out to fix more than expected — it routes the request
+to the backend's real business logic instead of the router's own 404, so
+the user now gets the same specific "couldn't find a certificate" message
+a normal nonexistent ID gets. Also hardened `humanizeBackendError`'s
+fallback to a fixed generic message, dropping the raw-text-with-MSP-substitution
+"safety net" that let #21 go unnoticed in the first place. New
+`governance/[id]/page.tsx` mirrors the existing `institutions/[id]/page.tsx`
+read-only pattern, deliberately no vote control (the list page already owns
+that). Both fixes live-verified on staging via a temporary branch deploy
+(Playwright, logged in as BLCFounder), restored to `main` afterward — local
+Fabric network's CouchDB containers had independently stopped 4 days prior;
+restarted them to unblock this, chaincode-as-a-service containers are still
+gone locally and weren't fixed (out of scope).
+
+**A fourth occurrence of the rule-5/7 bundling pattern** (Phase 18, Phase
+19, now this), caught by Ring 2 on PR #29: shipped with no
+`openspec/changes/<id>/` folder. Fixed the same way as before — created
+`verify-encoding-and-proposal-lookup` as a real retroactive change, this
+time with an actual delta spec rather than `skip_specs: true`, since Ring
+2's should-fix was right that issue #22 is genuine new user-facing
+behavior the spec never described. Modified `institution-governance-ui`'s
+"Look up a single proposal by ID" requirement (previously API-only, from
+`2026-08-12-governance-proposal-lookup`) to also cover the UI surface,
+including a new "read-only by design" scenario for the deliberate
+no-voting-here decision. Synced into the main spec and archived.
+
+**Separately, found and fixed a real relay bug from live use, not
+testing** (`fix-relay-only-engage-bot-started-threads`, under the existing
+`slack-answer-relay` change-id): the team reflexively replies in-thread on
+everything in `team_blockchain`, not just this bot's nudges, so every
+ordinary conversation thread got a visible "couldn't find a linked issue"
+notice. `SlackClient.fetchThreadParent` (renamed from
+`fetchThreadParentText`) now also reports `isFromBot` (Slack's own `bot_id`
+field — a webhook-posted nudge has it set and no `user` field at all, a
+clean discriminator from a human-started thread); a non-bot thread now
+gets a new, deliberately silent `not_a_bot_thread` outcome instead of a
+notice.
+
+**Also fixed today: `ai-pr-review.yml`'s reproducible silent no-op**
+(issue #27, 2 occurrences: PR #25's 3rd pass, PR #26's 2nd). Re-attempted
+the `show_full_output` diagnosis already used once before for this exact
+symptom (2026-08-12, `ERROR_LOG.md`) — this time it hit an unrelated
+GitHub API 404 on that specific run's job data that didn't clear on
+retry, so the root cause wasn't reconfirmed from a transcript. Widened
+`allowedTools` based on the denial count matching the earlier incident's
+pattern, not a fresh diagnosis — noted honestly as inferred, not
+confirmed, in the workflow file's own comment. Verified working
+afterward: two consecutive re-review passes on PR #29 both posted
+successfully.
+
+**Branch protection finally turned on, for real, after this whole
+day's build-up:** the repo went public (team decision, Dominik's call,
+after the residual CA-credential gap from Phase 19 was flagged — flagged
+to Neethu directly; whether Dominik himself was told this specific detail
+before deciding is unconfirmed, not restated as fact here). `gh api
+.../branches/main/protection` succeeded on the first real attempt —
+confirms the whole point of going public actually worked, where it
+previously returned a hard `403 Upgrade to GitHub Pro or make this
+repository public`. Configured with `enforce_admins: false` (admins can
+still push directly, matching this repo's own established pattern of
+direct-to-main fixes for workflow files and small corrections) and a
+required status check on `review` (Ring 2) — a deliberate choice, not
+the strictest possible configuration.
