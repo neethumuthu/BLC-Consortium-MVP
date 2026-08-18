@@ -3246,3 +3246,54 @@ still push directly, matching this repo's own established pattern of
 direct-to-main fixes for workflow files and small corrections) and a
 required status check on `review` (Ring 2) — a deliberate choice, not
 the strictest possible configuration.
+
+## Phase 21 — Bug/Improvement/Question triage added to review prompts (2026-08-18)
+
+Aga's review of the AI SDLC findings report flagged the report's own
+Bug/Improvement/Question triage lesson (§7) as valuable and asked whether
+it could be built into the automated review flow instead of depending on
+someone remembering to do it. Confirmed directly before changing anything:
+neither `ai-pr-review.yml` nor `agentic-qa.yml`'s prompts, nor
+`AGENTS.md`/`CONVENTIONS.md`/`context/rules/`, mentioned this triage
+anywhere — it had only ever happened as a one-off judgment call during a
+specific PR review, written up afterward as a lesson. Dominik approved
+building it in (PR #39).
+
+Added a second, independent type tag `[bug|improvement|question]`
+alongside each workflow's existing severity tag, with inline one-line
+definitions so the agent isn't guessing what each category means — same
+reasoning as the earlier `ai-pr-review.yml` silent-no-op bug: an implied
+instruction is exactly the kind of thing that silently fails. Additive
+only, not a replacement for severity tagging.
+
+**Caught a real bug in the change itself before merging:** the added text
+used contractions ("don't", "shouldn't"). `ai-pr-review.yml`'s prompt is
+embedded inside a single-quoted GitHub Actions expression
+(`${{ cond && '...' || '' }}`), and an unescaped apostrophe there
+terminates the string early — confirmed live: the push that introduced
+those words produced a failed run with zero jobs (GitHub's own signature
+for a workflow parse failure), not the expected `pull_request` review run.
+This is exactly why the rest of that prompt had always avoided
+contractions. Reworded without them and confirmed the fix live: the next
+push produced a normal `success` `pull_request` review run.
+
+**Live-testing the tag itself surfaced a structural limitation, not a
+bug:** `claude-code-action` refuses to run using a workflow-file version
+that differs from `main`'s, specifically so a PR can't modify its own
+review logic and have that modified version review itself
+("Workflow validation failed... Action skipped due to workflow validation
+error"). Since PR #39 modifies `ai-pr-review.yml` itself, it structurally
+could never generate a live tagged review of its own diff. Manually
+verified the diff by hand instead (quote-balance, YAML validity) and
+merged on that basis, planning to confirm live tagged output on this
+entry's own PR — a genuine PR that doesn't touch either workflow file.
+
+`agentic-qa.yml` got the same tag, applied to how findings become issue
+titles (`"[bug] <title>"`). A manual `workflow_dispatch` test run on the
+feature branch confirmed the new prompt text was delivered correctly, but
+found zero new defects that run (staging had already been swept clean
+earlier the same day) — so no real tagged issue title exists yet from
+this side; it'll show up whenever a genuinely new QA finding comes up.
+
+Next: the matching upstream PR against `espeo/ai-sdlc-framework`, once
+this entry's own PR confirms real tagged output from `ai-pr-review.yml`.
