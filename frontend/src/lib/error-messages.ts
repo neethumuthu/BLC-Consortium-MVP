@@ -46,6 +46,9 @@ export function humanizeBackendError(rawMessage: string): string {
   if (/is not open \(status:/.test(message)) {
     return "This proposal is no longer open for voting.";
   }
+  if (/read-only credential/.test(message)) {
+    return "This is a read-only account and can't make changes — browsing and lookups still work normally.";
+  }
 
   // Anything not explicitly matched above is unverified, raw backend/
   // framework text (chaincode error, HTTP framework text like "Cannot GET
