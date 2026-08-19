@@ -15,4 +15,4 @@
 
 ## 4. Archive
 
-- [ ] 4.1 Archive this change
+- [x] 4.1 Archive this change

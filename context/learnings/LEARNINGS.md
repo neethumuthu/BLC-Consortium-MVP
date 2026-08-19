@@ -11,6 +11,13 @@ owner: context steward (rotating)
      move it to rules/ or CONVENTIONS.md and replace the body with a link.
      Prune quarterly: anything not referenced in 6 months gets archived. -->
 
+## 2026-08-18 — Splitting a code fix and its context/spec correction into two PRs (rule 7) can leave `main` asserting a fix that hasn't landed yet
+
+- **Symptom:** PR #37 (docs-only: `CONCERNS.md`/`LEARNINGS.md` corrections for `encode-dynamic-route-ids`) was cut from `main` and independently mergeable, with no dependency on PR #34 (the actual `encodeURIComponent` code fix, still open at the time). Ring 2 review on #37 flagged it `[blocker]`: if #37 merged first, `main`'s own `CONCERNS.md` would declare the four sites "(resolved — all four sites)" / "fixed 2026-08-18" while the shipped code still had every unencoded interpolation — exactly the context-contradicts-code state `AGENTS.md` rule 8 says must never happen. Fixed by the author adding an explicit "do not merge before #34" note to the PR description and merging #34 first.
+- **Root cause:** rule 7 (context/spec updates go through their own PR, never bundled with the feature commit) correctly stops a docs correction from riding along with code — but splitting them creates two independently-mergeable PRs with no enforced ordering between them. Nothing about rule 7's guidance addresses the case where the docs PR describes a fix in the past tense before that fix has actually merged.
+- **Rule adopted:** When a rule-7 split produces a context/spec-correction PR that describes another, still-open PR's fix as already done, state the hard merge-order dependency explicitly in the docs PR's own description (e.g. "do not merge before #N") — don't rely on merge order happening to work out, since GitHub enforces no ordering between two independently-mergeable PRs.
+- **Origin:** PR #37 Ring 2 review (`[blocker]`), self-fixed same PR via an explicit dependency note in the description.
+
 ## 2026-08-18 — A fix at one call site of a shared bug/duplication class doesn't get checked against sibling call sites unless a reviewer happens to catch it
 
 - **Symptom:** Two independent instances this range:
