@@ -111,7 +111,7 @@ Any caller SHALL be able to list every certificate issued by a given institution
 - **WHEN** an institution has issued one or more certificates
 - **THEN** they are returned/shown ordered most-recent-first
 
-#### Scenario: An institution's detail page shows its own certificate list, for any institution
+#### Scenario: An institution's detail page shows that institution's certificates, even when it isn't the caller's own
 - **WHEN** a caller views another institution's detail page
 - **THEN** the page shows that institution's issued certificates, not an empty or "not available" state, and does not offer an action to issue a certificate on that institution's behalf
 
