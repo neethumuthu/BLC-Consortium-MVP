@@ -2,7 +2,7 @@
 last_verified: 2026-08-19
 source: code-derived, human-reviewed
 confidence: high
-owner: Neethu Muthu, reviewed 2026-08-13
+owner: Neethu Muthu, reviewed 2026-08-19
 ---
 
 # Certificate Lifecycle Specification
