@@ -11,6 +11,15 @@ owner: context steward (rotating)
      move it to rules/ or CONVENTIONS.md and replace the body with a link.
      Prune quarterly: anything not referenced in 6 months gets archived. -->
 
+## 2026-08-19 — A same-PR nit self-fix touched one copy of a duplicated/paired fact but left its counterpart stale
+
+- **Symptom:** Two independent instances, both in the prior context-gardener PR (#46):
+  1. Ring 2 flagged `openspec/specs/certificate-lifecycle/spec.md`'s new scenario title as confusingly worded; the self-fix (`4642ed8`) retitled it in the live spec but left the identical, freshly-created archive copy at `openspec/changes/archive/2026-08-18-institution-certificates-list/specs/certificate-lifecycle/spec.md` with the old wording — caught by a second Ring 2 pass on the same PR (`7f91fa1` then fixed it).
+  2. A separate Ring 2 pass caught that bumping `certificate-lifecycle/spec.md`'s `last_verified` to `2026-08-19` left the paired `owner: Neethu Muthu, reviewed 2026-08-13` line on the old date — every other `openspec/specs/*/spec.md` file keeps these two frontmatter fields in lockstep (`58d02ab` then fixed it).
+- **Root cause:** both fixes were scoped to the one occurrence a reviewer's comment pointed at, not to every place the same fact is duplicated. A gardener PR that syncs a delta spec into a live spec *and* archives that delta spec in the same commit range creates two copies of the same text in one PR; a spec file's `last_verified` and its `owner: ..., reviewed <date>` line are two frontmatter fields asserting the same "when was this last checked" fact. Fixing one instance/field without checking for its counterpart leaves the second one stale, same shape as the sibling-call-site gap already logged below but for docs/frontmatter rather than code.
+- **Rule adopted:** When self-fixing a nit inside a context-gardener PR, check whether the corrected fact has a counterpart the same PR also touched or created — an archive copy made earlier in the same PR, or a paired frontmatter field (`last_verified` and the `owner` line's `reviewed <date>` in `openspec/specs/*/spec.md`) — and fix both in the same commit, not just the one the reviewer named.
+- **Origin:** PR #46 Ring 2 review, two separate passes (both nit, both self-fixed same PR via `7f91fa1` and `58d02ab`).
+
 ## 2026-08-18 — Splitting a code fix and its context/spec correction into two PRs (rule 7) can leave `main` asserting a fix that hasn't landed yet
 
 - **Symptom:** PR #37 (docs-only: `CONCERNS.md`/`LEARNINGS.md` corrections for `encode-dynamic-route-ids`) was cut from `main` and independently mergeable, with no dependency on PR #34 (the actual `encodeURIComponent` code fix, still open at the time). Ring 2 review on #37 flagged it `[blocker]`: if #37 merged first, `main`'s own `CONCERNS.md` would declare the four sites "(resolved — all four sites)" / "fixed 2026-08-18" while the shipped code still had every unencoded interpolation — exactly the context-contradicts-code state `AGENTS.md` rule 8 says must never happen. Fixed by the author adding an explicit "do not merge before #34" note to the PR description and merging #34 first.
