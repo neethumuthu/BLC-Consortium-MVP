@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-08-18
+last_verified: 2026-08-19
 source: compound loop
 confidence: high
 owner: context steward (rotating)
